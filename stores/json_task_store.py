@@ -23,7 +23,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable, Iterator, Mapping
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 try:  # POSIX advisory locks; macOS/Linux in practice.
     import fcntl
@@ -495,6 +495,64 @@ class JSONTaskStateStore:
 
         return self._mutate(task_id, expected_revision, apply, actor)
 
+
+    def record_event(
+        self,
+        task_id: str,
+        event_type: str,
+        *,
+        expected_revision: int,
+        data: Mapping[str, Any] | None = None,
+        actor: str = "unknown",
+    ) -> TaskState:
+        def apply(task: TaskState) -> tuple[TaskState, tuple[tuple[str, Mapping[str, Any]], ...]]:
+            return task, ((event_type, dict(data or {})),)
+
+        return self._mutate_events(task_id, expected_revision, apply, actor)
+
+    def record_execution_result(
+        self,
+        task_id: str,
+        *,
+        expected_revision: int,
+        artifacts: Sequence[Artifact] = (),
+        cursor: ExecutionCursor | None = None,
+        active_capability: CapabilityActivity | None = None,
+        completed: bool = False,
+        event_type: str = "EXECUTION_RESULT",
+        event_data: Mapping[str, Any] | None = None,
+        actor: str = "unknown",
+    ) -> TaskState:
+        cleaned_artifacts = tuple(_sanitize_artifact(item) for item in artifacts)
+        cleaned_cursor = _sanitize_cursor(cursor)
+        cleaned_capability = (
+            _sanitize_capability(active_capability) if active_capability is not None else None
+        )
+        data = dict(event_data or {})
+
+        def apply(task: TaskState) -> tuple[TaskState, tuple[tuple[str, Mapping[str, Any]], ...]]:
+            if task.is_terminal:
+                raise InvalidTaskState(f"cannot record execution on terminal task {task_id}")
+            updated = replace(
+                task,
+                artifacts=task.artifacts + cleaned_artifacts,
+                cursor=cleaned_cursor if cursor is not None else task.cursor,
+                active_capability=(
+                    cleaned_capability if cleaned_capability is not None else task.active_capability
+                ),
+            )
+            specs: list[tuple[str, Mapping[str, Any]]] = [(event_type, data)]
+            if completed:
+                if not can_transition(task.lifecycle_status, LifecycleStatus.COMPLETED):
+                    raise InvalidTransition(task_id, task.lifecycle_status, LifecycleStatus.COMPLETED)
+                updated = replace(updated, lifecycle_status=LifecycleStatus.COMPLETED)
+                specs.append(
+                    ("TASK_COMPLETED", {"invocation_id": data.get("invocation_id")})
+                )
+            return updated, tuple(specs)
+
+        return self._mutate_events(task_id, expected_revision, apply, actor)
+
     # --------------------------------------------------------------- internals
 
     def _mutate(
@@ -504,6 +562,23 @@ class JSONTaskStateStore:
         apply: Callable[[TaskState], tuple[TaskState, str, dict[str, Any]]],
         actor: str,
     ) -> TaskState:
+        def apply_one(
+            task: TaskState,
+        ) -> tuple[TaskState, tuple[tuple[str, Mapping[str, Any]], ...]]:
+            updated, event_type, event_data = apply(task)
+            return updated, ((event_type, event_data),)
+
+        return self._mutate_events(task_id, expected_revision, apply_one, actor)
+
+    def _mutate_events(
+        self,
+        task_id: str,
+        expected_revision: int,
+        apply: Callable[
+            [TaskState], tuple[TaskState, tuple[tuple[str, Mapping[str, Any]], ...]]
+        ],
+        actor: str,
+    ) -> TaskState:
         _validate_task_id(task_id)
         with self._exclusive(task_id):
             document = self._load_document(task_id)
@@ -511,19 +586,20 @@ class JSONTaskStateStore:
             if current.revision != expected_revision:
                 raise RevisionConflict(task_id, expected_revision, current.revision)
 
-            updated, event_type, event_data = apply(current)
+            updated, specs = apply(current)
             now = self._clock()
             updated = replace(updated, revision=current.revision + 1, updated_at=now)
-            event = TaskEvent(
-                seq=len(document["events"]) + 1,
-                type=event_type,
-                actor=redact(actor),
-                revision=updated.revision,
-                at=now,
-                data=redact_data(event_data),
-            )
+            for offset, (event_type, event_data) in enumerate(specs, start=1):
+                event = TaskEvent(
+                    seq=len(document["events"]) + offset,
+                    type=event_type,
+                    actor=redact(actor),
+                    revision=updated.revision,
+                    at=now,
+                    data=redact_data(event_data),
+                )
+                document["events"].append(self._event_to_doc(event))
             document["task"] = self._task_to_doc(updated)
-            document["events"].append(self._event_to_doc(event))
             self._write(task_id, document)
             return updated
 

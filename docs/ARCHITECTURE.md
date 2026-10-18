@@ -3,7 +3,7 @@
 Status: **ACP-ARCH-01, frozen**. Baseline commit `e9d1730`.
 This document is normative. Code that contradicts it is a defect, not a precedent.
 Concrete contracts: [TASK_STATE.md](TASK_STATE.md) (GOAL-02),
-[ROUTER.md](ROUTER.md) (GOAL-03).
+[ROUTER.md](ROUTER.md) (GOAL-03), [CONTROLLER.md](CONTROLLER.md) (GOAL-04).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -424,6 +424,30 @@ candidate, and stops.
 
 Concrete contract: [ROUTER.md](ROUTER.md).
 
+## 18. Controller Boundary (GOAL-04)
+
+The Task Controller composes existing capabilities one bounded step at a time:
+
+```
+load Task State -> read Health -> Router -> ONE execution invocation
+                -> persist result/failure -> AdvanceOutcome
+```
+
+- `advance()` never loops to completion and never retries; the caller decides
+  whether to advance again.
+- Execution is behind a vendor-neutral contract (`ExecutionRequest`,
+  `ExecutionResult`, `ExecutionFailure`). Adapters normalize failures.
+- Only normalized PROVIDER failures update health; execution/environment
+  failures never poison provider health.
+- Every write uses optimistic revision checks. A conflict or persistence
+  failure returns an explicit uncertain outcome; the Task is not falsely
+  completed.
+- NoRoute executes nothing and blocks the Task with recorded reasons.
+- An active insertion frame is left untouched; the controller returns
+  `BLOCKED`.
+
+Concrete contract: [CONTROLLER.md](CONTROLLER.md).
+
 ## Appendix A — Current code map
 
 | Path | Role | Boundary |
@@ -437,6 +461,8 @@ Concrete contract: [ROUTER.md](ROUTER.md).
 | `stores/json_task_store.py` | atomic JSON persistence | implements the Protocol |
 | `core/capability.py` | candidate contract | dataclass only; no registry |
 | `core/router.py` | deterministic selection | no execution/store/health writes |
+| `core/execution.py` | vendor-neutral execution contract | adapters implement it |
+| `core/controller.py` | bounded one-step composition | no loops; no raw provider parsing |
 | `tests/test_architecture.py` | invariant enforcement | — |
 
 Not present by design: Task State, Router, Jev, Human Control, UI, server, DB,

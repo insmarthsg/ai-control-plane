@@ -155,6 +155,7 @@ and no last-write-wins.
 - `create_task`, `get_task`, `list_tasks`, `list_events`
 - `set_lifecycle`, `set_durable_context`, `set_active_capability`
 - `add_artifact`, `save_checkpoint`
+- `record_event`, `record_execution_result` (controller observability, atomic progress)
 - `interrupt`, `resume`
 - `push_insertion`, `complete_insertion`
 
@@ -167,10 +168,12 @@ Current types: `TASK_CREATED`, `TASK_STARTED`, `TASK_PAUSED`, `TASK_BLOCKED`,
 `TASK_RESUMED`, `TASK_COMPLETED`, `TASK_FAILED`, `TASK_CANCELLED`,
 `CONTEXT_UPDATED`, `CAPABILITY_ACTIVATED`, `ARTIFACT_ADDED`,
 `CHECKPOINT_SAVED`, `TASK_INTERRUPTED`, `INSERTION_PUSHED`,
-`INSERTION_COMPLETED`.
+`INSERTION_COMPLETED`, `ROUTING_DECIDED`, `EXECUTION_STARTED`,
+`EXECUTION_RESULT`, `EXECUTION_FAILED`, `CAPABILITY_UNRESOLVED`.
 
-Each successful mutation appends exactly one event at the resulting revision.
-The snapshot is authoritative; events explain change history.
+Most mutations append one event at the resulting revision; an execution result
+that completes a task appends `EXECUTION_RESULT` and `TASK_COMPLETED` in the
+same commit. The snapshot is authoritative; events explain change history.
 
 ## 11. Security
 

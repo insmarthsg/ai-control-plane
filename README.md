@@ -9,10 +9,11 @@ It is intentionally not an orchestrator, router, scheduler, UI, or database.
 
 **Architecture contract: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
 (ACP-ARCH-01, frozen), **[docs/TASK_STATE.md](docs/TASK_STATE.md)** (GOAL-02),
-and **[docs/ROUTER.md](docs/ROUTER.md)** (GOAL-03). They are normative; read
+and **[docs/ROUTER.md](docs/ROUTER.md)** (GOAL-03), **[docs/CONTROLLER.md](docs/CONTROLLER.md)**
+(GOAL-04). They are normative; read
 them before adding capabilities.
 
-## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02 + GOAL-03
+## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02 + GOAL-03 + GOAL-04
 
 Implemented:
 
@@ -28,6 +29,9 @@ Implemented:
 - `core/capability.py` + `core/router.py` — Thin Router: deterministic,
   explainable selection over user constraints, capability availability,
   provider health, and continuation compatibility. It never executes anything.
+- `core/execution.py` + `core/controller.py` — bounded Task Controller:
+  one `advance()` loads state, routes, invokes exactly one execution
+  capability, persists the result, and returns a structured outcome.
 - `tests/test_architecture.py` — frozen-boundary invariants.
 
 Architecture in one line: **capabilities, not workflows**; the Stable Core is
@@ -41,6 +45,11 @@ model, session, and executor.
 
 The Router is **not** an orchestrator: it returns a decision or `NoRoute`, with
 per-candidate reasons. It does not execute, retry, fail over, or write state.
+
+The Task Controller is **not** a workflow engine: `advance()` performs one
+bounded step and returns. Provider failures update Health and let the caller
+advance again; execution/environment failures block the task without poisoning
+provider health.
 
 Not implemented (later goals, by design):
 
@@ -121,4 +130,6 @@ GOAL-01 scenarios, ACP-ARCH-01 boundary invariants, GOAL-02 continuity tests
 (cross-process recovery, executor handoff, insertion nesting, concurrency,
 atomic-write failure, secret non-persistence), and GOAL-03 routing tests
 (constraints, health gates, continuation/handoff, NoRoute, determinism,
-judgment boundary) are all covered in `tests/`.
+judgment boundary), and GOAL-04 controller tests (bounded advance, CONTINUE,
+HANDOFF, provider-failure handoff, execution-failure isolation, NoRoute,
+revision conflict, persistence failure) are all covered in `tests/`.

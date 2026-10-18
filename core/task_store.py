@@ -8,7 +8,7 @@ implementation must satisfy the same interface without changing
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Protocol, runtime_checkable
+from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
 from .task import (
     Artifact,
@@ -168,3 +168,31 @@ class TaskStateStore(Protocol):
         actor: str = "unknown",
         result: Artifact | None = None,
     ) -> TaskState: ...
+
+    def record_event(
+        self,
+        task_id: str,
+        event_type: str,
+        *,
+        expected_revision: int,
+        data: Mapping[str, Any] | None = None,
+        actor: str = "unknown",
+    ) -> TaskState:
+        """Append one transition event without changing task fields."""
+        ...
+
+    def record_execution_result(
+        self,
+        task_id: str,
+        *,
+        expected_revision: int,
+        artifacts: Sequence[Artifact] = (),
+        cursor: ExecutionCursor | None = None,
+        active_capability: CapabilityActivity | None = None,
+        completed: bool = False,
+        event_type: str = "EXECUTION_RESULT",
+        event_data: Mapping[str, Any] | None = None,
+        actor: str = "unknown",
+    ) -> TaskState:
+        """Atomically persist artifacts, cursor, active capability, and completion."""
+        ...
