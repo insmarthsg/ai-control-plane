@@ -169,6 +169,31 @@ class TaskStateStore(Protocol):
         result: Artifact | None = None,
     ) -> TaskState: ...
 
+    def open_human_gate(
+        self,
+        task_id: str,
+        *,
+        expected_revision: int,
+        frame: InsertionFrame,
+        request_artifact: Artifact,
+        actor: str = "unknown",
+    ) -> TaskState:
+        """Atomically push a gate frame, record its request artifact, and block."""
+        ...
+
+    def resolve_human_gate(
+        self,
+        task_id: str,
+        *,
+        expected_revision: int,
+        request_id: str,
+        decision_artifact: Artifact,
+        decision: str,
+        actor: str = "unknown",
+    ) -> TaskState:
+        """Atomically pop the matching gate frame, restore the cursor, and resume."""
+        ...
+
     def record_event(
         self,
         task_id: str,

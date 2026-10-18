@@ -60,6 +60,7 @@ from .task_store import (
 __all__ = [
     "AdvanceOutcome",
     "AdvanceStatus",
+    "HumanGatePort",
     "ProviderHealthPort",
     "TaskController",
 ]
@@ -71,6 +72,7 @@ class AdvanceStatus(str, Enum):
     BLOCKED = "BLOCKED"
     NO_ROUTE = "NO_ROUTE"
     FAILED = "FAILED"
+    HUMAN_REQUIRED = "HUMAN_REQUIRED"
     CONFLICT = "CONFLICT"
     PERSISTENCE_FAILED = "PERSISTENCE_FAILED"
 
@@ -100,6 +102,22 @@ class ProviderHealthPort(Protocol):
     def record_success(self, provider: str) -> Any: ...
 
 
+class HumanGatePort(Protocol):
+    """Insertable human-decision capability; the controller never executes it."""
+
+    def request(
+        self,
+        task_id: str,
+        *,
+        requesting_capability: str,
+        reason: str,
+        question: str,
+        allowed_actions: Sequence[str],
+        context: Mapping[str, Any],
+        expected_revision: int,
+    ) -> Any: ...
+
+
 class _RouterPort(Protocol):
     def route(self, request: RoutingRequest) -> RoutingResult: ...
 
@@ -114,12 +132,14 @@ class TaskController:
         router: _RouterPort,
         health: ProviderHealthPort,
         capabilities: Mapping[str, ExecutionCapability],
+        human_gate: HumanGatePort | None = None,
         actor: str = "task-controller",
     ) -> None:
         self._store = store
         self._router = router
         self._health = health
         self._capabilities = dict(capabilities)
+        self._human_gate = human_gate
         self._actor = actor
 
     def advance(
@@ -432,6 +452,60 @@ class TaskController:
                 exc,
                 decision=decision,
                 execution=result,
+            )
+
+        human_signal = (
+            result.metadata.get("human_decision")
+            if isinstance(result.metadata, Mapping)
+            else None
+        )
+        if (
+            isinstance(human_signal, Mapping)
+            and not result.is_completed
+            and self._human_gate is not None
+        ):
+            raw_actions = human_signal.get("allowed_actions")
+            actions = (
+                tuple(str(item) for item in raw_actions)
+                if isinstance(raw_actions, (list, tuple)) and raw_actions
+                else ("APPROVE", "REJECT", "MODIFY")
+            )
+            try:
+                self._human_gate.request(
+                    task.task_id,
+                    requesting_capability=str(
+                        human_signal.get("requesting_capability")
+                        or candidate.capability_id
+                    ),
+                    reason=str(human_signal.get("reason") or ""),
+                    question=str(human_signal.get("question") or ""),
+                    allowed_actions=actions,
+                    context=dict(human_signal.get("context") or {}),
+                    expected_revision=task.revision,
+                )
+                task = self._store.get_task(task.task_id)
+            except Exception as exc:  # gate is optional and must fail closed
+                return self._outcome(
+                    task,
+                    AdvanceStatus.BLOCKED,
+                    invocation_id,
+                    selected_capability=candidate.capability_id,
+                    mode=request.execution_mode,
+                    routing_decision=decision,
+                    execution=result,
+                    message=f"human gate request failed: {type(exc).__name__}",
+                    next_condition="reconcile",
+                )
+            return self._outcome(
+                task,
+                AdvanceStatus.HUMAN_REQUIRED,
+                invocation_id,
+                selected_capability=candidate.capability_id,
+                mode=request.execution_mode,
+                routing_decision=decision,
+                execution=result,
+                message="human decision required",
+                next_condition="human",
             )
 
         status = AdvanceStatus.COMPLETED if result.is_completed else AdvanceStatus.PROGRESSED

@@ -496,6 +496,87 @@ class JSONTaskStateStore:
         return self._mutate(task_id, expected_revision, apply, actor)
 
 
+    def open_human_gate(
+        self,
+        task_id: str,
+        *,
+        expected_revision: int,
+        frame: InsertionFrame,
+        request_artifact: Artifact,
+        actor: str = "unknown",
+    ) -> TaskState:
+        cleaned_frame = _sanitize_frame(frame)
+        cleaned_request = _sanitize_artifact(request_artifact)
+        request_id = str((cleaned_request.payload or {}).get("request_id", ""))
+        if not request_id:
+            raise InvalidTaskState("human gate request artifact requires request_id")
+
+        def apply(task: TaskState) -> tuple[TaskState, str, dict[str, Any]]:
+            if task.lifecycle_status is not LifecycleStatus.RUNNING:
+                raise InvalidTaskState(
+                    f"human gate requires RUNNING, current {task.lifecycle_status.value}"
+                )
+            if any(str((item.input or {}).get("request_id", "")) for item in task.insertions):
+                raise InvalidTaskState("a human gate is already active on this task")
+            bounded = replace(
+                cleaned_frame,
+                return_cursor=task.cursor,
+                return_capability=task.active_capability,
+            )
+            updated = replace(
+                task,
+                insertions=task.insertions + (bounded,),
+                active_capability=bounded.capability,
+                cursor=None,
+                lifecycle_status=LifecycleStatus.BLOCKED,
+                artifacts=task.artifacts + (cleaned_request,),
+            )
+            return updated, "HUMAN_DECISION_REQUESTED", {
+                "request_id": request_id,
+                "requesting_capability": str(
+                    (cleaned_request.payload or {}).get("requesting_capability", "")
+                ),
+            }
+
+        return self._mutate(task_id, expected_revision, apply, actor)
+
+    def resolve_human_gate(
+        self,
+        task_id: str,
+        *,
+        expected_revision: int,
+        request_id: str,
+        decision_artifact: Artifact,
+        decision: str,
+        actor: str = "unknown",
+    ) -> TaskState:
+        cleaned_decision = _sanitize_artifact(decision_artifact)
+
+        def apply(task: TaskState) -> tuple[TaskState, str, dict[str, Any]]:
+            if task.lifecycle_status is not LifecycleStatus.BLOCKED:
+                raise InvalidTaskState(
+                    f"human gate resolution requires BLOCKED, current {task.lifecycle_status.value}"
+                )
+            if not task.insertions:
+                raise InvalidTaskState("no active insertion frame")
+            frame = task.insertions[-1]
+            if str((frame.input or {}).get("request_id", "")) != request_id:
+                raise InvalidTaskState("human gate request is not the active frame")
+            updated = replace(
+                task,
+                insertions=task.insertions[:-1],
+                active_capability=frame.return_capability,
+                cursor=frame.return_cursor,
+                lifecycle_status=LifecycleStatus.RUNNING,
+                artifacts=task.artifacts + (cleaned_decision,),
+            )
+            return updated, "HUMAN_DECISION_RESOLVED", {
+                "request_id": request_id,
+                "decision": decision,
+            }
+
+        return self._mutate(task_id, expected_revision, apply, actor)
+
     def record_event(
         self,
         task_id: str,

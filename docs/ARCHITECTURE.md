@@ -5,7 +5,8 @@ This document is normative. Code that contradicts it is a defect, not a preceden
 Concrete contracts: [TASK_STATE.md](TASK_STATE.md) (GOAL-02),
 [ROUTER.md](ROUTER.md) (GOAL-03), [CONTROLLER.md](CONTROLLER.md) (GOAL-04),
 [DSH_EXECUTION_ADAPTER.md](DSH_EXECUTION_ADAPTER.md) (GOAL-04C),
-[RUNTIME_CONTROL.md](RUNTIME_CONTROL.md) (GOAL-05).
+[RUNTIME_CONTROL.md](RUNTIME_CONTROL.md) (GOAL-05),
+[HUMAN_GATE.md](HUMAN_GATE.md) (GOAL-06).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -468,6 +469,21 @@ adapter.
 
 Concrete contract: [RUNTIME_CONTROL.md](RUNTIME_CONTROL.md).
 
+## 20. Human Gate Boundary (GOAL-06)
+
+A Human Gate is an insertable control capability, not a workflow stage:
+
+- a capability asks at a safe boundary (no in-flight process is frozen);
+- the gate is an `InsertionFrame`; request/decision are durable artifacts;
+- the Task becomes BLOCKED; only a human decision resolves it (no timeout,
+  no automatic approval);
+- APPROVE restores the saved cursor/capability and returns to RUNNING;
+  REJECT returns control with a durable decision (not Task failure);
+  MODIFY is an authoritative, durable constraint that survives HANDOFF;
+- duplicate/stale/wrong-task decisions fail closed; one active gate per task.
+
+Concrete contract: [HUMAN_GATE.md](HUMAN_GATE.md).
+
 ## Appendix A — Current code map
 
 | Path | Role | Boundary |
@@ -485,6 +501,7 @@ Concrete contract: [RUNTIME_CONTROL.md](RUNTIME_CONTROL.md).
 | `core/execution.py` | vendor-neutral execution contract | adapters implement it |
 | `core/controller.py` | bounded one-step composition | no loops; no raw provider parsing |
 | `core/runtime.py` | live invocation control | no vendor/process vocabulary |
+| `core/human.py` | insertable human decision gate | no runtime/provider/execution calls |
 | `tests/test_architecture.py` | invariant enforcement | — |
 
 Not present by design: Task State, Router, Jev, Human Control, UI, server, DB,

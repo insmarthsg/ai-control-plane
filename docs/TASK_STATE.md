@@ -156,6 +156,7 @@ and no last-write-wins.
 - `set_lifecycle`, `set_durable_context`, `set_active_capability`
 - `add_artifact`, `save_checkpoint`
 - `record_event`, `record_execution_result` (controller observability, atomic progress)
+- `open_human_gate`, `resolve_human_gate` (atomic gate frame + artifact + BLOCKED/RUNNING)
 - `interrupt`, `resume`
 - `push_insertion`, `complete_insertion`
 
@@ -169,7 +170,8 @@ Current types: `TASK_CREATED`, `TASK_STARTED`, `TASK_PAUSED`, `TASK_BLOCKED`,
 `CONTEXT_UPDATED`, `CAPABILITY_ACTIVATED`, `ARTIFACT_ADDED`,
 `CHECKPOINT_SAVED`, `TASK_INTERRUPTED`, `INSERTION_PUSHED`,
 `INSERTION_COMPLETED`, `ROUTING_DECIDED`, `EXECUTION_STARTED`,
-`EXECUTION_RESULT`, `EXECUTION_FAILED`, `CAPABILITY_UNRESOLVED`.
+`EXECUTION_RESULT`, `EXECUTION_FAILED`, `CAPABILITY_UNRESOLVED`,
+`HUMAN_DECISION_REQUESTED`, `HUMAN_DECISION_RESOLVED`.
 
 Most mutations append one event at the resulting revision; an execution result
 that completes a task appends `EXECUTION_RESULT` and `TASK_COMPLETED` in the
