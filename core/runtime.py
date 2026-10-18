@@ -387,6 +387,24 @@ class RuntimeManager:
         with self._lock:
             return [entry.record() for entry in self._active.values()]
 
+    def records_for_task(self, task_id: str) -> list[RuntimeRecord]:
+        """Read-only query used by observability; includes recent terminals."""
+
+        with self._lock:
+            entries = [
+                entry for entry in self._active.values() if entry.task_id == task_id
+            ] + [
+                entry for entry in self._recent.values() if entry.task_id == task_id
+            ]
+        seen: set[str] = set()
+        records: list[RuntimeRecord] = []
+        for entry in sorted(entries, key=lambda item: (item.started_at, item.execution_id)):
+            if entry.execution_id in seen:
+                continue
+            seen.add(entry.execution_id)
+            records.append(entry.record())
+        return records
+
 
 def _replace_metadata(request: ExecutionRequest, metadata: Mapping[str, Any]) -> ExecutionRequest:
     from dataclasses import replace

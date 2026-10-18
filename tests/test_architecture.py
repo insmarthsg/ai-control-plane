@@ -53,6 +53,7 @@ def test_core_imports_without_any_adapter() -> None:
         "import sys\n"
         "import core.errors, core.provider_health, core.task, core.task_store\n"
         "import core.capability, core.router, core.execution, core.controller, core.runtime, core.human\n"
+        "import core.observation, core.recovery\n"
         "loaded = sorted(m for m in sys.modules if m.split('.')[0] in {'adapters', 'stores'})\n"
         "assert not loaded, loaded\n"
     )
@@ -115,6 +116,8 @@ def test_task_core_has_no_storage_or_harness_imports() -> None:
         + sorted((REPO_ROOT / "core").glob("execution*.py"))
         + sorted((REPO_ROOT / "core").glob("runtime*.py"))
         + sorted((REPO_ROOT / "core").glob("human*.py"))
+        + sorted((REPO_ROOT / "core").glob("observation*.py"))
+        + sorted((REPO_ROOT / "core").glob("recovery*.py"))
     ):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -161,6 +164,8 @@ def test_task_core_has_no_harness_or_pipeline_vocabulary() -> None:
         + sorted((REPO_ROOT / "core").glob("execution*.py"))
         + sorted((REPO_ROOT / "core").glob("runtime*.py"))
         + sorted((REPO_ROOT / "core").glob("human*.py"))
+        + sorted((REPO_ROOT / "core").glob("observation*.py"))
+        + sorted((REPO_ROOT / "core").glob("recovery*.py"))
     ):
         text = path.read_text(encoding="utf-8").lower()
         for token in forbidden_tokens:
@@ -181,3 +186,14 @@ def test_human_gate_does_not_import_runtime_or_adapters() -> None:
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 assert alias.name.split(".")[0] not in {"runtime", "adapters"}
+
+
+def test_observation_and_recovery_never_execute_or_mutate() -> None:
+    for name in ("observation.py", "recovery.py"):
+        source = (REPO_ROOT / "core" / name).read_text(encoding="utf-8")
+        for forbidden in (
+            "def execute(", "def route(", "def cancel(", "def approve(",
+            "def resolve(", "update_health", "import adapters", "from .runtime",
+            "from .controller", "RuntimeManager",
+        ):
+            assert forbidden not in source, f"{name} contains {forbidden!r}"

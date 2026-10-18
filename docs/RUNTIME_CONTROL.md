@@ -24,6 +24,7 @@ RuntimeManager(capabilities={capability_id: RuntimeExecution})
   status(execution_id) -> RuntimeRecord | None              # None = NOT_FOUND
   cancel(execution_id) -> CancelResult
   events(execution_id) -> tuple[RuntimeEvent, ...]
+  records_for_task(task_id) -> RuntimeRecord[]  # read-only observability query
 ```
 
 `RuntimeExecution` = the existing `execute(request)` seam plus

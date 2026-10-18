@@ -161,7 +161,8 @@ and no last-write-wins.
 - `push_insertion`, `complete_insertion`
 
 Callers never open the JSON file directly. `stores/json_task_store.py` is the
-only module that knows the on-disk format.
+only module that knows the on-disk format. Observability reads Task/Events via
+`get_task`/`list_events` and adds no schema of its own.
 
 ## 10. Events
 

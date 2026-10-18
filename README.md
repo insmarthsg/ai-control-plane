@@ -14,7 +14,7 @@ It is intentionally not an orchestrator, router, scheduler, UI, or database.
 [docs/DSH_EXECUTION_SEAM.md](docs/DSH_EXECUTION_SEAM.md) audit (GOAL-04B).
 They are normative; read them before adding capabilities.
 
-## Status: GOAL-01 … GOAL-05 + GOAL-06 (human gate)
+## Status: GOAL-01 … GOAL-06 + GOAL-07 (observability/recovery)
 
 Implemented:
 
@@ -43,6 +43,10 @@ Implemented:
   the invocation; Task lifecycle and Provider Health are untouched.
 - `core/human.py` — insertable Human Gate: durable APPROVE / REJECT / MODIFY,
   insertion-stack cursor restoration, no timeout, no automatic approval.
+- `core/observation.py` + `core/recovery.py` — read-only Task/runtime view,
+  ordered timeline, evidence-based recovery classification (`ACTIVE`,
+  `WAITING_HUMAN`, `RECOVERABLE`, `HANDOFF_POSSIBLE`, `BLOCKED`, `ORPHANED`,
+  `UNCERTAIN`, `TERMINAL`, `LOST`) with recommended actions only.
 - `tests/test_architecture.py` — frozen-boundary invariants.
 
 Architecture in one line: **capabilities, not workflows**; the Stable Core is

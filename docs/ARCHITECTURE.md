@@ -6,7 +6,8 @@ Concrete contracts: [TASK_STATE.md](TASK_STATE.md) (GOAL-02),
 [ROUTER.md](ROUTER.md) (GOAL-03), [CONTROLLER.md](CONTROLLER.md) (GOAL-04),
 [DSH_EXECUTION_ADAPTER.md](DSH_EXECUTION_ADAPTER.md) (GOAL-04C),
 [RUNTIME_CONTROL.md](RUNTIME_CONTROL.md) (GOAL-05),
-[HUMAN_GATE.md](HUMAN_GATE.md) (GOAL-06).
+[HUMAN_GATE.md](HUMAN_GATE.md) (GOAL-06),
+[OBSERVABILITY_RECOVERY.md](OBSERVABILITY_RECOVERY.md) (GOAL-07).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -484,6 +485,22 @@ A Human Gate is an insertable control capability, not a workflow stage:
 
 Concrete contract: [HUMAN_GATE.md](HUMAN_GATE.md).
 
+## 21. Observability & Reconciliation Boundary (GOAL-07)
+
+Observability is a read-only projection over durable Task facts plus live
+runtime/human/health views. Task status and runtime status are always reported
+separately; an empty runtime registry after restart is not proof that no
+execution exists.
+
+Reconciliation classifies recovery state from evidence (`RECOVERABLE`,
+`WAITING_HUMAN`, `HANDOFF_POSSIBLE`, `BLOCKED`, `ORPHANED`, `UNCERTAIN`,
+`LOST`, `TERMINAL`, `ACTIVE`, `UNKNOWN`) and returns a recommended action.
+It never routes, executes, resumes, cancels, or mutates Task/Health state.
+Resume support is supplied per capability as a vendor-neutral profile; the core
+never parses continuation refs.
+
+Concrete contract: [OBSERVABILITY_RECOVERY.md](OBSERVABILITY_RECOVERY.md).
+
 ## Appendix A — Current code map
 
 | Path | Role | Boundary |
@@ -502,6 +519,8 @@ Concrete contract: [HUMAN_GATE.md](HUMAN_GATE.md).
 | `core/controller.py` | bounded one-step composition | no loops; no raw provider parsing |
 | `core/runtime.py` | live invocation control | no vendor/process vocabulary |
 | `core/human.py` | insertable human decision gate | no runtime/provider/execution calls |
+| `core/observation.py` | read-only Task/runtime/human/health projection | no writes |
+| `core/recovery.py` | evidence-based recovery classification | no execution/mutation |
 | `tests/test_architecture.py` | invariant enforcement | — |
 
 Not present by design: Task State, Router, Jev, Human Control, UI, server, DB,
