@@ -128,19 +128,21 @@ future composition concern; the controller schema is unchanged.
 
 ## 13. DSH boundary and audit
 
-DSH remains an Execution Adapter concern. A headless seam exists
-(`dsh --profile headless "<task>"` prints one final assistant message and
-exits), but the current audit found no stable structured contract:
+DSH remains an Execution Adapter concern. ACP-GOAL-04B
+([DSH_EXECUTION_SEAM.md](DSH_EXECUTION_SEAM.md)) found two programmatic stdio
+seams, not just the one-shot headless CLI:
 
-- no JSON result schema or explicit `PROGRESS/COMPLETED` signal
-- no headless continuation/resume flag; a new session per invocation
-- no normalized failure taxonomy; failures surface as stderr/exit codes
-- boot writes profile/session state under `DSH_HOME` and would consume a real
-  provider call
+- **SDK JSON-RPC** (`dsh --profile sdk`): start via `session/prompt`, coarse
+  `session.status`, raw `session.event`, `session/wait`, `session/resume`;
+  no cancel/close.
+- **ACP v1** (`dsh --profile acp`): `session/new`, prompt, semantic updates,
+  turn-level `session/cancel`, `session/close`, `session/resume`; provider
+  errors collapse to `end_turn`.
 
-Therefore **DSH_EXECUTION_ADAPTER = BLOCKED** in this goal. No shell mock, no
-fake provider, and no unsupported adapter was added. The missing seam is:
-structured result JSON, failure normalization, and an explicit resume handle.
+Headless is one-shot text only; child tools (`interrupt_agent`) are not an
+external API. **DSH_EXECUTION_ADAPTER = PARTIAL**: a bridge is feasible, but no
+native execution/turn id exists and the SDK has no turn-level cancel. The concrete bridge decision is recorded in the seam audit; no adapter was added in
+this goal.
 
 ## 14. Non-goals
 

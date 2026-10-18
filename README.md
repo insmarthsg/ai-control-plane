@@ -7,13 +7,14 @@ harness reports that a provider is unhealthy. Today it contains exactly one
 goal's worth of code: provider error classification and provider health state.
 It is intentionally not an orchestrator, router, scheduler, UI, or database.
 
-**Architecture contract: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
-(ACP-ARCH-01, frozen), **[docs/TASK_STATE.md](docs/TASK_STATE.md)** (GOAL-02),
-and **[docs/ROUTER.md](docs/ROUTER.md)** (GOAL-03), **[docs/CONTROLLER.md](docs/CONTROLLER.md)**
-(GOAL-04). They are normative; read
-them before adding capabilities.
+**Contracts:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (ACP-ARCH-01),
+[docs/TASK_STATE.md](docs/TASK_STATE.md) (GOAL-02),
+[docs/ROUTER.md](docs/ROUTER.md) (GOAL-03),
+[docs/CONTROLLER.md](docs/CONTROLLER.md) (GOAL-04), and the read-only
+[docs/DSH_EXECUTION_SEAM.md](docs/DSH_EXECUTION_SEAM.md) audit (GOAL-04B).
+They are normative; read them before adding capabilities.
 
-## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02 + GOAL-03 + GOAL-04
+## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02 + GOAL-03 + GOAL-04 + GOAL-04B (audit)
 
 Implemented:
 
