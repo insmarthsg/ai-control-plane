@@ -2,6 +2,7 @@
 
 Status: **ACP-ARCH-01, frozen**. Baseline commit `e9d1730`.
 This document is normative. Code that contradicts it is a defect, not a precedent.
+Concrete Task State contract: [TASK_STATE.md](TASK_STATE.md) (GOAL-02).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -31,7 +32,7 @@ without losing the identity of a "task" at all.
 |---|---|
 | **Task identity** | Opaque `task_id` plus lifecycle; no stage names, no workflow shape. |
 | **Capability contract** | A capability must be describable (id, kind, availability, invoke/failure semantics) for composition to be possible. |
-| **Event / state transition contract** | Insertion, pause, resume, and audit require a neutral record of what happened. Shape is owned by GOAL-02, not by this document. |
+| **Event / state transition contract** | Insertion, pause, resume, and audit require a neutral record of what happened. Shape is frozen in TASK_STATE.md. |
 | **Composition boundary** | A task must be able to reference capabilities and insertion points without the core knowing concrete implementations. |
 
 Explicitly **not** Stable Core:
@@ -72,7 +73,7 @@ each other. A capability must not reach into another capability's internals.
 
 **No runtime protocol is frozen in ACP-ARCH-01.** There is no registry, bus,
 loader, DI container, service locator, or workflow DSL. `core/capability.py`
-does not exist yet because current code (GOAL-01) does not need it. It will be
+does not exist yet because current code (GOAL-01/GOAL-02) does not need it. It will be
 added only when GOAL-02/03 can show a concrete call site that a Protocol makes
 safer, and then only as a minimal Protocol.
 
@@ -152,7 +153,7 @@ Execution ──▶ approval needed ──▶ INSERT Human Gate ──▶ resume
 Research  ──▶ conflicting evidence ──▶ INSERT Judgment ──▶ resume Research
 ```
 
-Contract requirements (for GOAL-02 to model; not implemented here):
+Contract requirements (modeled by GOAL-02 in TASK_STATE.md):
 
 Task State must be able to express
 
@@ -168,7 +169,7 @@ Invariants:
 - resuming must not require the inserted capability to still be available
 - insertion is composition, not a pre-declared workflow branch
 
-No Task State schema is frozen in this document.
+The concrete Task State contract is frozen in [TASK_STATE.md](TASK_STATE.md); this document stays principles-only.
 
 ---
 
@@ -215,6 +216,7 @@ Every non-core capability should be replaceable behind its contract:
 | health persistence A | persistence B | storage adapter |
 | UI A | UI B | UI adapter |
 | memory impl A | memory impl B | memory adapter |
+| task store backend A | backend B | `stores/` implementation |
 
 Replacing one capability must not require migrating Task State, Router,
 Judgment, Human Control, or UI. If it does, the boundary is wrong.
@@ -410,6 +412,10 @@ verification for tasks that need them.
 | `core/errors.py` | provider error taxonomy, classification, redaction | harness-neutral; no vendor vocabulary |
 | `core/provider_health.py` | per-provider health state machine | harness-neutral; opaque provider keys |
 | `adapters/dsh.py` | DSH session-log → core signals | `TEMPORARY_INTERNAL_INTERFACE`, `FALLBACK_ONLY` |
+| `core/task.py` | Task State domain model | no storage/harness imports |
+| `core/task_store.py` | store Protocol + errors | storage-agnostic |
+| `core/redaction.py` | shared credential redaction | one choke point |
+| `stores/json_task_store.py` | atomic JSON persistence | implements the Protocol |
 | `tests/test_architecture.py` | invariant enforcement | — |
 
 Not present by design: Task State, Router, Jev, Human Control, UI, server, DB,

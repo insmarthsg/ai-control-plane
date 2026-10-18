@@ -8,9 +8,10 @@ goal's worth of code: provider error classification and provider health state.
 It is intentionally not an orchestrator, router, scheduler, UI, or database.
 
 **Architecture contract: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
-(ACP-ARCH-01, frozen). It is normative; read it before adding capabilities.
+(ACP-ARCH-01, frozen) and **[docs/TASK_STATE.md](docs/TASK_STATE.md)**
+(GOAL-02). They are normative; read them before adding capabilities.
 
-## Status: GOAL-01 + ACP-ARCH-01 (contract)
+## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02
 
 Implemented:
 
@@ -20,11 +21,19 @@ Implemented:
   isolated per provider.
 - `adapters/dsh.py` — **FALLBACK_ONLY** reader for DSH session logs
   (`session.v4.jsonl.zstd`), marked `TEMPORARY_INTERNAL_INTERFACE`.
+- `core/task.py` + `core/task_store.py` + `stores/json_task_store.py` —
+  persistent Task State: opaque identity, durable context, artifacts, execution
+  cursor, interruptions, insertion frames, revision-checked updates.
 - `tests/test_architecture.py` — frozen-boundary invariants.
 
 Architecture in one line: **capabilities, not workflows**; the Stable Core is
 only task identity, the capability contract, the event/state contract, and the
 composition boundary; every harness/vendor detail stays behind an adapter.
+
+Task State is **not** workflow state: it records facts (including an execution
+cursor and temporary insertion frames) and never decides what runs next. It is
+persisted per task, survives process restart, and is independent of provider,
+model, session, and executor.
 
 Not implemented (later goals, by design):
 
@@ -101,5 +110,7 @@ boundary.
 python3 -m pytest -q
 ```
 
-Ten required scenarios are covered in `tests/`, plus adapter fixture tests,
-core-isolation checks, and the ACP-ARCH-01 boundary invariants.
+GOAL-01 scenarios, ACP-ARCH-01 boundary invariants, and GOAL-02 continuity
+tests (including cross-process recovery, executor handoff, insertion nesting,
+optimistic concurrency, atomic-write failure, and secret non-persistence) are
+all covered in `tests/`.

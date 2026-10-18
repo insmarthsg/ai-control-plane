@@ -6,6 +6,7 @@ docs/ARCHITECTURE.md, not an abstract plugin framework.
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -50,8 +51,8 @@ def test_core_has_no_provider_branching() -> None:
 def test_core_imports_without_any_adapter() -> None:
     program = (
         "import sys\n"
-        "import core.errors, core.provider_health\n"
-        "loaded = sorted(m for m in sys.modules if m.split('.')[0] == 'adapters')\n"
+        "import core.errors, core.provider_health, core.task, core.task_store\n"
+        "loaded = sorted(m for m in sys.modules if m.split('.')[0] in {'adapters', 'stores'})\n"
         "assert not loaded, loaded\n"
     )
     completed = subprocess.run(
@@ -91,3 +92,53 @@ def test_adapter_owns_the_harness_code_table() -> None:
     assert DSH_CODE_CATEGORIES["TRANSPORT"] is ErrorCategory.NETWORK_ERROR
     assert DSH_CODE_CATEGORIES["QUOTA"] is ErrorCategory.QUOTA_EXHAUSTED
     assert DSH_CODE_CATEGORIES["SERVER"] is ErrorCategory.PROVIDER_UNAVAILABLE
+
+
+def test_task_core_has_no_storage_or_harness_imports() -> None:
+    forbidden_roots = {
+        "json",
+        "pathlib",
+        "sqlite3",
+        "os",
+        "fcntl",
+        "tempfile",
+        "stores",
+        "adapters",
+        "subprocess",
+    }
+    for path in sorted((REPO_ROOT / "core").glob("task*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            for name in names:
+                root = name.split(".")[0]
+                assert root not in forbidden_roots, f"{path.name} imports {name}"
+
+
+def test_task_core_has_no_harness_or_pipeline_vocabulary() -> None:
+    forbidden_tokens = (
+        "dsh",
+        "session.v4",
+        "zstd",
+        "openai",
+        "deepseek",
+        "zai-coding",
+        "glm-",
+        "codex",
+        "planner",
+        "worker",
+        "reviewer",
+        "pipeline",
+        "next_stage",
+        "workflow_steps",
+        "stage",
+    )
+    for path in sorted((REPO_ROOT / "core").glob("task*.py")):
+        text = path.read_text(encoding="utf-8").lower()
+        for token in forbidden_tokens:
+            assert token not in text, f"{path.name} leaks {token!r}"

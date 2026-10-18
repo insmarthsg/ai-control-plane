@@ -25,6 +25,8 @@ from email.utils import parsedate_to_datetime
 from enum import Enum
 from typing import Any, Mapping
 
+from .redaction import redact
+
 __all__ = [
     "ErrorCategory",
     "ProviderError",
@@ -82,51 +84,6 @@ _PROVIDER_EVIDENCE = re.compile(
     r"service[\s_-]+unavailable|overloaded|server[\s_-]+error|\b50[0-4]\b",
     re.IGNORECASE,
 )
-
-# Order matters: the bearer/api-key patterns consume the secret before the
-# generic "Authorization: ..." pattern can mangle the label.
-_REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (
-        re.compile(
-            r"(?i)\b(api[_-]?key|authorization)\b\s*[:=]\s*(?:Bearer\s+)?[\"']?[^\s\"',;}]+"
-        ),
-        r"\1=[REDACTED]",
-    ),
-    (
-        re.compile(r"(?i)\b(access_token|refresh_token|id_token)\b\s*[:=]\s*[\"']?[^\s\"',;}]+"),
-        r"\1=[REDACTED]",
-    ),
-    (
-        re.compile(r"(?i)\b(accountId|account_id)\b\s*[:=]\s*[\"']?[^\s\"',;}]+"),
-        r"\1=[REDACTED]",
-    ),
-    (
-        re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"),
-        "Bearer [REDACTED]",
-    ),
-    (
-        re.compile(r"\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{8,}"),
-        "[REDACTED_API_KEY]",
-    ),
-    (
-        re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}"),
-        "[REDACTED_JWT]",
-    ),
-)
-
-
-def redact(text: Any) -> str:
-    """Return *text* with credentials and account identifiers removed.
-
-    This is the single redaction choke point. Every provider-facing string
-    (error message, health reason, serialized dict) passes through it.
-    """
-
-    rendered = text if isinstance(text, str) else str(text)
-    for pattern, replacement in _REDACTIONS:
-        rendered = pattern.sub(replacement, rendered)
-    return rendered
-
 
 def _as_http_status(value: Any) -> int | None:
     if value is None or isinstance(value, bool):
