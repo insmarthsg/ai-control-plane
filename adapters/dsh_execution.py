@@ -294,7 +294,12 @@ class DSHExecutionAdapter:
     # ------------------------------------------------------------ public API
 
     def execute(self, request: ExecutionRequest) -> ExecutionResult | ExecutionFailure:
-        execution_id = str(uuid.uuid4())
+        injected = request.metadata.get("execution_id") if isinstance(request.metadata, Mapping) else None
+        execution_id = (
+            injected.strip()
+            if isinstance(injected, str) and injected.strip()
+            else str(uuid.uuid4())
+        )
         invocation_id = request.invocation_id or str(uuid.uuid4())
         mode_name = request.execution_mode.value
 
@@ -459,6 +464,14 @@ class DSHExecutionAdapter:
             runtime.terminate()
             return True
         return False
+
+    def is_alive(self, execution_id: str) -> bool:
+        with self._lock:
+            entry = self._active.get(execution_id)
+        if entry is None:
+            return False
+        runtime = entry[1]
+        return bool(runtime is not None and runtime.is_alive())
 
     def get_execution(self, execution_id: str) -> Mapping[str, Any] | None:
         with self._lock:

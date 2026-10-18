@@ -14,7 +14,7 @@ It is intentionally not an orchestrator, router, scheduler, UI, or database.
 [docs/DSH_EXECUTION_SEAM.md](docs/DSH_EXECUTION_SEAM.md) audit (GOAL-04B).
 They are normative; read them before adding capabilities.
 
-## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02 + GOAL-03 + GOAL-04 + GOAL-04B/04C (DSH bridge)
+## Status: GOAL-01 … GOAL-04C + GOAL-05 (runtime control)
 
 Implemented:
 
@@ -38,6 +38,9 @@ Implemented:
 - `core/execution.py` + `core/controller.py` — bounded Task Controller:
   one `advance()` loads state, routes, invokes exactly one execution
   capability, persists the result, and returns a structured outcome.
+- `core/runtime.py` — Runtime Control: non-blocking `start`, `status`,
+  confirmed `cancel`, LOST detection, event trace. Runtime cancel stops only
+  the invocation; Task lifecycle and Provider Health are untouched.
 - `tests/test_architecture.py` — frozen-boundary invariants.
 
 Architecture in one line: **capabilities, not workflows**; the Stable Core is

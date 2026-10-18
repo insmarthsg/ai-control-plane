@@ -4,7 +4,8 @@ Status: **ACP-ARCH-01, frozen**. Baseline commit `e9d1730`.
 This document is normative. Code that contradicts it is a defect, not a precedent.
 Concrete contracts: [TASK_STATE.md](TASK_STATE.md) (GOAL-02),
 [ROUTER.md](ROUTER.md) (GOAL-03), [CONTROLLER.md](CONTROLLER.md) (GOAL-04),
-[DSH_EXECUTION_ADAPTER.md](DSH_EXECUTION_ADAPTER.md) (GOAL-04C).
+[DSH_EXECUTION_ADAPTER.md](DSH_EXECUTION_ADAPTER.md) (GOAL-04C),
+[RUNTIME_CONTROL.md](RUNTIME_CONTROL.md) (GOAL-05).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -449,6 +450,24 @@ load Task State -> read Health -> Router -> ONE execution invocation
 
 Concrete contract: [CONTROLLER.md](CONTROLLER.md).
 
+## 19. Runtime Control Boundary (GOAL-05)
+
+Runtime Control owns one live invocation, not the Task:
+
+- `start` returns an opaque `execution_id` before completion;
+- `status` reports STARTING/RUNNING/STOPPING/terminal and `LOST` for a dead
+  runtime;
+- `cancel` calls the capability's termination seam and confirms `STOPPED`;
+  it never only flips a registry flag.
+
+Runtime state is in-memory live control state, separate from durable Task
+State. Runtime cancel never changes Task lifecycle and never becomes a
+provider error. Pause is not supported; resume is blocked by the current DSH
+runtime version. The DSH process, wire format, and session ids stay inside the
+adapter.
+
+Concrete contract: [RUNTIME_CONTROL.md](RUNTIME_CONTROL.md).
+
 ## Appendix A — Current code map
 
 | Path | Role | Boundary |
@@ -465,6 +484,7 @@ Concrete contract: [CONTROLLER.md](CONTROLLER.md).
 | `core/router.py` | deterministic selection | no execution/store/health writes |
 | `core/execution.py` | vendor-neutral execution contract | adapters implement it |
 | `core/controller.py` | bounded one-step composition | no loops; no raw provider parsing |
+| `core/runtime.py` | live invocation control | no vendor/process vocabulary |
 | `tests/test_architecture.py` | invariant enforcement | — |
 
 Not present by design: Task State, Router, Jev, Human Control, UI, server, DB,

@@ -206,3 +206,39 @@ def test_registry_cleanup_after_finish(tmp_path: Path) -> None:
     assert adapter.active_executions() == []
     record = adapter.get_execution(result.metadata["execution_id"])
     assert record is not None and record["status"] == "COMPLETED"
+
+
+def test_runtime_manager_cancel_reaches_dsh_runtime(tmp_path: Path) -> None:
+    from core.runtime import CancelStatus, RuntimeManager, RuntimeStatus
+    from core.execution import ExecutionRequest
+
+    adapter = make_adapter(tmp_path, timeout_seconds=60.0)
+    manager = RuntimeManager({"dsh": adapter}, cancel_timeout=15.0)
+    record = manager.start(
+        capability_id="dsh",
+        request=ExecutionRequest(
+            invocation_id="inv-cancel",
+            task_id="task-cancel",
+            objective="SLOW_WAIT until cancelled",
+        ),
+    )
+    deadline = __import__("time").monotonic() + 10
+    while __import__("time").monotonic() < deadline:
+        snapshot = manager.status(record.execution_id)
+        if (
+            snapshot is not None
+            and snapshot.status is RuntimeStatus.RUNNING
+            and adapter.get_execution(record.execution_id) is not None
+        ):
+            break
+        __import__("time").sleep(0.05)
+    assert manager.status(record.execution_id).status is RuntimeStatus.RUNNING
+    # The adapter must have used the manager's execution_id for its own handle.
+    assert adapter.get_execution(record.execution_id) is not None
+
+    result = manager.cancel(record.execution_id)
+    assert result.status is CancelStatus.CANCELLED
+    assert result.confirmed is True
+    assert manager.status(record.execution_id).status is RuntimeStatus.STOPPED
+    internal = adapter.get_execution(record.execution_id)
+    assert internal is not None and internal["status"] == "TERMINATED"

@@ -52,7 +52,7 @@ def test_core_imports_without_any_adapter() -> None:
     program = (
         "import sys\n"
         "import core.errors, core.provider_health, core.task, core.task_store\n"
-        "import core.capability, core.router, core.execution, core.controller\n"
+        "import core.capability, core.router, core.execution, core.controller, core.runtime\n"
         "loaded = sorted(m for m in sys.modules if m.split('.')[0] in {'adapters', 'stores'})\n"
         "assert not loaded, loaded\n"
     )
@@ -113,6 +113,7 @@ def test_task_core_has_no_storage_or_harness_imports() -> None:
         + sorted((REPO_ROOT / "core").glob("capability*.py"))
         + sorted((REPO_ROOT / "core").glob("controller*.py"))
         + sorted((REPO_ROOT / "core").glob("execution*.py"))
+        + sorted((REPO_ROOT / "core").glob("runtime*.py"))
     ):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -157,6 +158,7 @@ def test_task_core_has_no_harness_or_pipeline_vocabulary() -> None:
         + sorted((REPO_ROOT / "core").glob("capability*.py"))
         + sorted((REPO_ROOT / "core").glob("controller*.py"))
         + sorted((REPO_ROOT / "core").glob("execution*.py"))
+        + sorted((REPO_ROOT / "core").glob("runtime*.py"))
     ):
         text = path.read_text(encoding="utf-8").lower()
         for token in forbidden_tokens:
