@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Control Plane</title>
+<style>
+  :root { --fg:#1c2024; --muted:#6b7280; --line:#d9dee5; --bg:#f7f8fa; --ok:#0f7b4f; --bad:#b42318; --warn:#9a6700; --accent:#214f86; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  main { max-width:900px; margin:0 auto; padding:28px 20px 60px; }
+  h1 { font-size:21px; margin:0 0 4px; letter-spacing:.2px; }
+  .sub { color:var(--muted); margin:0 0 22px; font-size:13px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin-bottom:16px; }
+  h2 { font-size:14px; margin:0 0 12px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input[type=text], textarea, select { width:100%; border:1px solid var(--line); border-radius:6px; padding:9px 10px; font:inherit; background:#fff; color:var(--fg); }
+  textarea { min-height:96px; resize:vertical; }
+  button { border:1px solid var(--accent); background:var(--accent); color:#fff; border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; }
+  button.secondary { background:#fff; color:var(--accent); }
+  button.danger { background:#fff; color:var(--bad); border-color:var(--bad); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .grid { display:grid; grid-template-columns:150px 1fr; gap:6px 14px; font-size:14px; }
+  .grid .k { color:var(--muted); }
+  .ok { color:var(--ok); font-weight:600; }
+  .bad { color:var(--bad); font-weight:600; }
+  .warn { color:var(--warn); font-weight:600; }
+  .pill { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 10px; font-size:12px; color:var(--muted); }
+  .status { font-size:18px; font-weight:600; margin:0 0 10px; }
+  .meta { color:var(--muted); font-size:12px; margin-top:8px; }
+  .result { white-space:pre-wrap; background:#fbfbfc; border:1px solid var(--line); border-radius:6px; padding:12px; min-height:44px; }
+  .timeline { list-style:none; margin:0; padding:0; font-size:13px; }
+  .timeline li { padding:6px 0; border-bottom:1px dashed var(--line); display:flex; gap:10px; }
+  .timeline time { color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .hidden { display:none !important; }
+  #verifyBox { margin-top:12px; }
+  .error { color:var(--bad); font-size:13px; margin-top:8px; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI Control Plane</h1>
+  <p class="sub">本地控制台 · 事实来自 Task State / Observation / Runtime Control / Human Gate / Workspace Guard</p>
+
+  <section>
+    <h2>Workspace</h2>
+    <label for="wsPath">绝对路径</label>
+    <input id="wsPath" type="text" placeholder="/absolute/path/to/git/workspace" autocomplete="off">
+    <div class="row" style="margin-top:12px">
+      <label style="margin:0" for="mode">权限</label>
+      <select id="mode" style="width:auto">
+        <option value="read_only" selected>只读分析</option>
+        <option value="mutating">允许修改项目</option>
+      </select>
+      <button id="verifyBtn">验证工作区</button>
+    </div>
+    <div id="verifyBox" class="hidden">
+      <div id="verifyStatus" class="status"></div>
+      <div id="verifyGrid" class="grid"></div>
+      <div id="verifyExtra" class="meta"></div>
+    </div>
+    <div id="verifyError" class="error"></div>
+  </section>
+
+  <section>
+    <h2>任务</h2>
+    <label for="objective">你想让 AI 做什么？</label>
+    <textarea id="objective" placeholder="例如：请先读取当前绑定项目的代码、文档和 Git 状态，判断这个项目现在下一步最应该做什么。不要修改文件。"></textarea>
+    <label for="capability">执行能力 / 模型</label>
+    <select id="capability"></select>
+    <div class="row" style="margin-top:14px">
+      <button id="startBtn" disabled>开始</button>
+      <span id="startHint" class="meta">需要先验证工作区</span>
+    </div>
+    <div id="startError" class="error"></div>
+  </section>
+
+  <section id="taskSection" class="hidden">
+    <h2>当前任务</h2>
+    <div id="taskStatus" class="status"></div>
+    <div id="taskGrid" class="grid"></div>
+    <div class="row" style="margin-top:14px">
+      <button id="cancelBtn" class="danger hidden">停止当前执行</button>
+      <button id="continueBtn" class="secondary hidden">继续一次</button>
+      <span id="taskMeta" class="meta"></span>
+    </div>
+    <div id="taskError" class="error"></div>
+  </section>
+
+  <section id="humanSection" class="hidden">
+    <h2>需要你的决定</h2>
+    <p id="humanQuestion" style="font-weight:600;margin-top:0"></p>
+    <div class="meta" id="humanMeta"></div>
+    <label for="humanInstruction">修改要求（MODIFY 时填写）</label>
+    <textarea id="humanInstruction" placeholder="例如：可以继续，但保持只读，不要修改项目。"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="approveBtn">批准</button>
+      <button id="rejectBtn" class="secondary">拒绝</button>
+      <button id="modifyBtn" class="secondary">按修改后的要求继续</button>
+    </div>
+    <div id="humanError" class="error"></div>
+  </section>
+
+  <section id="resultSection" class="hidden">
+    <h2>结果</h2>
+    <div id="resultBox" class="result"></div>
+  </section>
+
+  <section id="timelineSection" class="hidden">
+    <h2>过程</h2>
+    <ul id="timeline" class="timeline"></ul>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { binding: null, verification: null, taskId: null, capabilities: [], poll: null };
+
+const EVENT_LABELS = {
+  WORKSPACE_BINDING_CREATED: "工作区已绑定",
+  WORKSPACE_VERIFIED: "工作区验证通过",
+  WORKSPACE_VERIFICATION_FAILED: "工作区验证失败，已阻止执行",
+  TASK_CREATED: "任务已创建",
+  TASK_STARTED: "任务开始",
+  ROUTING_DECIDED: "执行能力已选择",
+  EXECUTION_STARTED: "执行开始",
+  EXECUTION_RESULT: "执行返回结果",
+  EXECUTION_FAILED: "执行失败",
+  HUMAN_DECISION_REQUESTED: "请求人工决定",
+  HUMAN_DECISION_RESOLVED: "人工决定已记录",
+  TASK_BLOCKED: "任务阻塞",
+  TASK_COMPLETED: "任务完成",
+  RUNTIME_STARTED: "运行时启动",
+  RUNTIME_CANCELLED: "运行时已停止",
+  RUNTIME_FAILED: "运行时失败",
+};
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function pill(text, cls) { return `<span class="${cls}">${esc(text)}</span>`; }
+function showError(id, message) { const el = $(id); el.textContent = message || ""; }
+
+async function api(method, path, body) {
+  const response = await fetch(path, {
+    method,
+    headers: body ? {"Content-Type": "application/json"} : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(data.message || data.error || `HTTP ${response.status}`);
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+async function loadCapabilities() {
+  try {
+    const data = await api("GET", "/api/capabilities");
+    state.capabilities = data.capabilities || [];
+    renderCapabilities();
+  } catch (e) { showError("startError", e.message); }
+}
+
+function renderCapabilities() {
+  const mode = $("mode").value;
+  const usable = state.capabilities.filter((c) => (c.modes || []).includes(mode));
+  $("capability").innerHTML = usable.map((c) =>
+    `<option value="${esc(c.capability_id)}">${esc(c.label)} · ${esc(c.provider)}/${esc(c.model)}</option>`
+  ).join("");
+}
+
+async function verifyWorkspace() {
+  showError("verifyError", "");
+  $("verifyBtn").disabled = true;
+  $("startBtn").disabled = true;
+  try {
+    const data = await api("POST", "/api/workspaces/verify", {
+      path: $("wsPath").value.trim(),
+      mode: $("mode").value,
+    });
+    state.verification = data.verification;
+    state.binding = data.binding;
+    renderVerification();
+  } catch (e) {
+    state.verification = null; state.binding = null;
+    $("verifyBox").classList.add("hidden");
+    showError("verifyError", e.message);
+  } finally {
+    $("verifyBtn").disabled = false;
+  }
+}
+
+function renderVerification() {
+  const v = state.verification;
+  if (!v) return;
+  $("verifyBox").classList.remove("hidden");
+  const actual = v.actual || {};
+  const allowed = !!v.execution_allowed;
+  $("verifyStatus").innerHTML = allowed
+    ? pill("✓ VERIFIED", "ok")
+    : pill(`✗ ${v.reason}`, "bad");
+  const rows = [
+    ["Path", actual.worktree_path || actual.root_path],
+    ["Repository", actual.repository_root],
+    ["Branch", actual.branch],
+    ["HEAD", actual.head],
+    ["Tracking", v.expected?.tracking_ref || actual.tracking_ref],
+    ["Tracking HEAD", actual.tracking_head],
+    ["Working Tree", actual.dirty ? "DIRTY" : "CLEAN"],
+    ["Repository relation", actual.baseline_relationship],
+  ];
+  $("verifyGrid").innerHTML = rows.map(([k, val]) =>
+    `<div class="k">${esc(k)}</div><div>${esc(val ?? "—")}</div>`
+  ).join("");
+  $("verifyExtra").textContent = allowed
+    ? `verified_at ${v.verified_at}`
+    : `mismatches: ${(v.mismatches || []).join(", ") || "—"} · ${v.recommended_action}`;
+  $("startBtn").disabled = !allowed;
+  $("startHint").textContent = allowed
+    ? "工作区已验证；只读模式不会修改项目"
+    : "工作区未通过验证，无法开始";
+}
+
+async function startTask() {
+  showError("startError", "");
+  if (!state.binding) return;
+  $("startBtn").disabled = true;
+  try {
+    const data = await api("POST", "/api/tasks", {
+      objective: $("objective").value.trim(),
+      binding: state.binding,
+      mode: $("mode").value,
+      capability_id: $("capability").value,
+    });
+    setTask(data.task_id);
+  } catch (e) {
+    if (e.data && e.data.verification) {
+      state.verification = e.data.verification;
+      renderVerification();
+    }
+    showError("startError", e.message);
+  } finally {
+    $("startBtn").disabled = !(state.verification && state.verification.execution_allowed);
+  }
+}
+
+function setTask(taskId) {
+  state.taskId = taskId;
+  localStorage.setItem("acp_task_id", taskId);
+  const url = new URL(location.href);
+  url.searchParams.set("task", taskId);
+  history.replaceState({}, "", url);
+  $("taskSection").classList.remove("hidden");
+  loadTask();
+  if (state.poll) clearInterval(state.poll);
+  state.poll = setInterval(loadTask, 1500);
+}
+
+async function loadTask() {
+  if (!state.taskId) return;
+  try {
+    const data = await api("GET", `/api/tasks/${encodeURIComponent(state.taskId)}`);
+    renderTask(data);
+  } catch (e) {
+    showError("taskError", e.message);
+  }
+}
+
+function renderTask(data) {
+  const obs = data.observation || {};
+  const ws = obs.workspace;
+  $("taskStatus").textContent = data.status_label || data.task_status;
+  const rows = [
+    ["Task", data.task_status],
+    ["Task revision", obs.task_revision],
+    ["Capability", data.capability_label || data.capability_id || "—"],
+    ["Provider / Model", `${data.provider || "—"} / ${data.model || "—"}`],
+    ["Mode", data.mode === "read_only" ? "只读分析" : "允许修改项目"],
+    ["Workspace", ws ? (ws.execution_allowed ? "✓ VERIFIED" : `✗ ${ws.reason}`) : "未绑定"],
+    ["Branch", ws?.branch],
+    ["HEAD", ws?.actual?.head],
+    ["Runtime", (obs.runtimes || []).map((r) => r.status).join(", ") || "none"],
+    ["Reconciliation", data.reconciliation?.status],
+  ];
+  $("taskGrid").innerHTML = rows.map(([k, v]) =>
+    `<div class="k">${esc(k)}</div><div>${esc(v ?? "—")}</div>`
+  ).join("");
+  $("cancelBtn").classList.toggle("hidden", !data.can_cancel);
+  $("continueBtn").classList.toggle("hidden", !data.can_continue);
+  $("taskMeta").textContent = data.reconciliation
+    ? `reconciliation: ${data.reconciliation.status} · ${data.reconciliation.recommended_action}`
+    : "";
+
+  if (data.pending_human) {
+    $("humanSection").classList.remove("hidden");
+    $("humanQuestion").textContent = data.pending_human.question || "需要你的决定";
+    $("humanMeta").textContent = `请求能力：${data.pending_human.requesting_capability} · ${data.pending_human.created_at}`;
+  } else {
+    $("humanSection").classList.add("hidden");
+  }
+
+  if (data.result) {
+    $("resultSection").classList.remove("hidden");
+    $("resultBox").textContent = data.result;
+  } else {
+    $("resultSection").classList.add("hidden");
+  }
+
+  const timeline = data.timeline || [];
+  $("timelineSection").classList.remove("hidden");
+  $("timeline").innerHTML = timeline.map((entry) => {
+    const label = EVENT_LABELS[entry.type] || entry.type;
+    const detail = entry.details?.decision || entry.details?.capability_id || entry.details?.reason || "";
+    return `<li><time>${esc((entry.at || "").replace("T", " ").replace("Z", ""))}</time><span>${esc(label)}${detail ? ` · ${esc(detail)}` : ""}</span></li>`;
+  }).reverse().join("");
+}
+
+async function cancelTask() {
+  showError("taskError", "");
+  $("cancelBtn").disabled = true;
+  try { await api("POST", `/api/tasks/${encodeURIComponent(state.taskId)}/cancel`, {}); }
+  catch (e) { showError("taskError", e.message); }
+  finally { $("cancelBtn").disabled = false; loadTask(); }
+}
+
+async function continueTask() {
+  showError("taskError", "");
+  $("continueBtn").disabled = true;
+  try { await api("POST", `/api/tasks/${encodeURIComponent(state.taskId)}/continue`, {}); }
+  catch (e) { showError("taskError", e.message); }
+  finally { $("continueBtn").disabled = false; loadTask(); }
+}
+
+async function decide(action) {
+  showError("humanError", "");
+  const instruction = $("humanInstruction").value.trim();
+  try {
+    await api("POST", `/api/tasks/${encodeURIComponent(state.taskId)}/human-decision`, {
+      action, instruction: action === "MODIFY" ? instruction : null,
+    });
+    loadTask();
+  } catch (e) {
+    if (e.data) showError("humanError", e.message);
+    else showError("humanError", e.message);
+  }
+}
+
+$("verifyBtn").addEventListener("click", verifyWorkspace);
+$("mode").addEventListener("change", () => { state.binding = null; state.verification = null; renderCapabilities(); $("startBtn").disabled = true; $("startHint").textContent = "权限已切换，请重新验证工作区"; renderVerification(); });
+$("startBtn").addEventListener("click", startTask);
+$("cancelBtn").addEventListener("click", cancelTask);
+$("continueBtn").addEventListener("click", continueTask);
+$("approveBtn").addEventListener("click", () => decide("APPROVE"));
+$("rejectBtn").addEventListener("click", () => decide("REJECT"));
+$("modifyBtn").addEventListener("click", () => decide("MODIFY"));
+
+(async function init() {
+  await loadCapabilities();
+  const fromUrl = new URL(location.href).searchParams.get("task");
+  const taskId = fromUrl || localStorage.getItem("acp_task_id");
+  if (taskId) setTask(taskId);
+})();
+</script>
+</body>
+</html>

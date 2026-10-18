@@ -14,7 +14,7 @@ It is intentionally not an orchestrator, router, scheduler, UI, or database.
 [docs/DSH_EXECUTION_SEAM.md](docs/DSH_EXECUTION_SEAM.md) audit (GOAL-04B).
 They are normative; read them before adding capabilities.
 
-## Status: GOAL-01 … GOAL-07 + GOAL-08A (workspace binding)
+## Status: GOAL-01 … GOAL-08A + GOAL-08B (local console)
 
 Implemented:
 
@@ -51,6 +51,8 @@ Implemented:
   binding and read-only Git guard: worktree/branch/repository identity,
   baseline/tracking truth, dirty/wrong-worktree fail-closed, execution cwd
   enforcement, no git mutation.
+- `console/` — local single-page AI Control Console: workspace verification,
+  task start, observation polling, real stop, Human Gate, result and timeline.
 - `tests/test_architecture.py` — frozen-boundary invariants.
 
 Architecture in one line: **capabilities, not workflows**; the Stable Core is
@@ -76,6 +78,16 @@ Not implemented (later goals, by design):
 - task state store
 - UI / web server / database / scheduler
 - quota prediction or credential refresh
+
+## Control Console quick start
+
+```bash
+python3 -m console.server --port 8765
+# http://127.0.0.1:8765
+```
+
+Enter a real Git workspace path, click **验证工作区**, then run a task in
+**只读分析** mode. See [docs/CONTROL_CONSOLE.md](docs/CONTROL_CONSOLE.md).
 
 ## Quick start
 

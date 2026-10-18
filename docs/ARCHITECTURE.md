@@ -8,7 +8,8 @@ Concrete contracts: [TASK_STATE.md](TASK_STATE.md) (GOAL-02),
 [RUNTIME_CONTROL.md](RUNTIME_CONTROL.md) (GOAL-05),
 [HUMAN_GATE.md](HUMAN_GATE.md) (GOAL-06),
 [OBSERVABILITY_RECOVERY.md](OBSERVABILITY_RECOVERY.md) (GOAL-07),
-[WORKSPACE_BINDING.md](WORKSPACE_BINDING.md) (GOAL-08A).
+[WORKSPACE_BINDING.md](WORKSPACE_BINDING.md) (GOAL-08A),
+[CONTROL_CONSOLE.md](CONTROL_CONSOLE.md) (GOAL-08B).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -517,6 +518,18 @@ The guard never mutates Git; safe fast-forward is only a recommendation.
 
 Concrete contract: [WORKSPACE_BINDING.md](WORKSPACE_BINDING.md).
 
+## 23. Control Console Boundary (GOAL-08B)
+
+The console is a presentation and orchestration layer over existing
+capabilities: workspace verification, task creation, one bounded advance,
+Observation/Reconciliation reads, Runtime stop, and Human Gate resolution.
+It adds no task/workflow/provider logic. The page derives every displayed
+state from durable Task facts and Observation; refresh and server restart
+re-read the backend. It is local-only (127.0.0.1), polling-based, and offers
+stop - never "pause".
+
+Concrete contract: [CONTROL_CONSOLE.md](CONTROL_CONSOLE.md).
+
 ## Appendix A — Current code map
 
 | Path | Role | Boundary |
@@ -539,6 +552,7 @@ Concrete contract: [WORKSPACE_BINDING.md](WORKSPACE_BINDING.md).
 | `core/recovery.py` | evidence-based recovery classification | no execution/mutation |
 | `core/workspace.py` | workspace binding/guard contract | no Git implementation |
 | `adapters/git_workspace.py` | read-only Git verification | no git mutations |
+| `console/` | local HTTP + single-page console | orchestration/rendering only |
 | `tests/test_architecture.py` | invariant enforcement | — |
 
 Not present by design: Task State, Router, Jev, Human Control, UI, server, DB,
