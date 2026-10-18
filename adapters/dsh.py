@@ -32,12 +32,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
-from core.errors import ProviderError, classify_provider_error
+from core.errors import ErrorCategory, ProviderError, classify_provider_error
 from core.provider_health import ProviderHealthTracker
 
 __all__ = [
     "TEMPORARY_INTERNAL_INTERFACE",
     "FALLBACK_ONLY",
+    "DSH_CODE_CATEGORIES",
     "SessionLogUnavailable",
     "SessionSummary",
     "extract_provider_failure",
@@ -50,6 +51,35 @@ __all__ = [
 
 TEMPORARY_INTERNAL_INTERFACE = True
 FALLBACK_ONLY = True
+
+# DSH-owned error vocabulary. It lives in the adapter on purpose: core must
+# never learn a harness's codes. Replacing DSH changes this module only.
+DSH_CODE_CATEGORIES: dict[str, ErrorCategory] = {
+    "RATE_LIMIT": ErrorCategory.RATE_LIMIT,
+    "QUOTA": ErrorCategory.QUOTA_EXHAUSTED,
+    "QUOTA_EXCEEDED": ErrorCategory.QUOTA_EXHAUSTED,
+    "QUOTA_EXHAUSTED": ErrorCategory.QUOTA_EXHAUSTED,
+    "ACCOUNT_QUOTA": ErrorCategory.QUOTA_EXHAUSTED,
+    "AUTH": ErrorCategory.AUTH_FAILED,
+    "AUTH_FAILED": ErrorCategory.AUTH_FAILED,
+    "UNAUTHORIZED": ErrorCategory.AUTH_FAILED,
+    "INVALID_CREDENTIAL": ErrorCategory.AUTH_FAILED,
+    "MISSING_CREDENTIAL": ErrorCategory.AUTH_FAILED,
+    "SERVER": ErrorCategory.PROVIDER_UNAVAILABLE,
+    "PROVIDER_UNAVAILABLE": ErrorCategory.PROVIDER_UNAVAILABLE,
+    "SERVICE_UNAVAILABLE": ErrorCategory.PROVIDER_UNAVAILABLE,
+    "MODEL_UNAVAILABLE": ErrorCategory.MODEL_UNAVAILABLE,
+    "MODEL_NOT_FOUND": ErrorCategory.MODEL_UNAVAILABLE,
+    "TIMEOUT": ErrorCategory.NETWORK_ERROR,
+    "TRANSPORT": ErrorCategory.NETWORK_ERROR,
+    "NETWORK_ERROR": ErrorCategory.NETWORK_ERROR,
+    "CONTEXT_WINDOW_EXCEEDED": ErrorCategory.MODEL_ERROR,
+    "INVALID_REQUEST": ErrorCategory.MODEL_ERROR,
+    "EMPTY_RESPONSE": ErrorCategory.MODEL_ERROR,
+    "PI_AI_ERROR": ErrorCategory.MODEL_ERROR,
+    "IMAGE_OFFLOAD_REQUIRED": ErrorCategory.MODEL_ERROR,
+    "MODEL_ERROR": ErrorCategory.MODEL_ERROR,
+}
 
 
 class SessionLogUnavailable(RuntimeError):
@@ -254,10 +284,13 @@ def extract_provider_failure(
         return None
 
     code, message, retry_seconds = latest
+    normalized = code.strip().upper() if isinstance(code, str) and code.strip() else None
+    hint = DSH_CODE_CATEGORIES.get(normalized) if normalized else None
     return classify_provider_error(
         selected_provider or "unknown",
         message=message,
         code=code,
+        category_hint=hint,
         retry_after_seconds=retry_seconds,
     )
 

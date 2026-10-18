@@ -1,17 +1,18 @@
 """Provider error taxonomy, classification, and credential redaction.
 
-This module is deliberately provider- and harness-neutral: it must not import
-DSH paths, zstd, or session-log schema. Adapters translate their wire/log
-evidence into the keyword arguments accepted here.
+This module is harness- and vendor-neutral. It accepts plain evidence (HTTP
+status, headers, message text, and an optional adapter-supplied category hint)
+and must never learn a harness's log format, error-code vocabulary, or
+credential store.
 
 Evidence rules (locked by GOAL-01):
 
 * A 429 without explicit quota evidence is ``RATE_LIMIT``, never
   ``QUOTA_EXHAUSTED``.
 * ``retry_after_seconds`` / ``reset_at`` are populated only from reliable,
-  explicit evidence (an HTTP ``Retry-After`` header, a structured DSH
-  ``providerRetryAfterMs`` field, or an explicit caller value). The legacy
-  "ChatGPT resets after 5 hours" folklore is never encoded here.
+  explicit evidence (an HTTP ``Retry-After`` header, an adapter-supplied
+  retry-after value, or an explicit caller value). No provider's folklore
+  reset window is encoded here.
 * Unknown failures are allowed to stay ``UNKNOWN``.
 """
 
@@ -46,36 +47,7 @@ class ErrorCategory(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
-# DSH canonical failure codes (HarnessError.code / pi-ai failure.code) mapped
-# onto the control-plane taxonomy. Codes are matched case-insensitively.
-_DSH_CODE_MAP: dict[str, ErrorCategory] = {
-    "RATE_LIMIT": ErrorCategory.RATE_LIMIT,
-    "QUOTA": ErrorCategory.QUOTA_EXHAUSTED,
-    "QUOTA_EXCEEDED": ErrorCategory.QUOTA_EXHAUSTED,
-    "QUOTA_EXHAUSTED": ErrorCategory.QUOTA_EXHAUSTED,
-    "ACCOUNT_QUOTA": ErrorCategory.QUOTA_EXHAUSTED,
-    "AUTH": ErrorCategory.AUTH_FAILED,
-    "AUTH_FAILED": ErrorCategory.AUTH_FAILED,
-    "UNAUTHORIZED": ErrorCategory.AUTH_FAILED,
-    "INVALID_CREDENTIAL": ErrorCategory.AUTH_FAILED,
-    "MISSING_CREDENTIAL": ErrorCategory.AUTH_FAILED,
-    "SERVER": ErrorCategory.PROVIDER_UNAVAILABLE,
-    "PROVIDER_UNAVAILABLE": ErrorCategory.PROVIDER_UNAVAILABLE,
-    "SERVICE_UNAVAILABLE": ErrorCategory.PROVIDER_UNAVAILABLE,
-    "MODEL_UNAVAILABLE": ErrorCategory.MODEL_UNAVAILABLE,
-    "MODEL_NOT_FOUND": ErrorCategory.MODEL_UNAVAILABLE,
-    "TIMEOUT": ErrorCategory.NETWORK_ERROR,
-    "TRANSPORT": ErrorCategory.NETWORK_ERROR,
-    "NETWORK_ERROR": ErrorCategory.NETWORK_ERROR,
-    "CONTEXT_WINDOW_EXCEEDED": ErrorCategory.MODEL_ERROR,
-    "INVALID_REQUEST": ErrorCategory.MODEL_ERROR,
-    "EMPTY_RESPONSE": ErrorCategory.MODEL_ERROR,
-    "PI_AI_ERROR": ErrorCategory.MODEL_ERROR,
-    "IMAGE_OFFLOAD_REQUIRED": ErrorCategory.MODEL_ERROR,
-    "MODEL_ERROR": ErrorCategory.MODEL_ERROR,
-}
-
-# Explicit terminal-quota wording. Mirrors DSH's isQuotaExceededError(): only
+# Explicit terminal-quota wording used by major providers. Only
 # quota/balance/credit/budget wording counts; a bare 429 never does.
 _QUOTA_EVIDENCE = re.compile(
     r"insufficient[\s_-]+(?:quota|balance|credits?)"
@@ -239,24 +211,27 @@ def _has_quota_evidence(text: str) -> bool:
     return bool(_QUOTA_EVIDENCE.search(text))
 
 
-def _classify(code: str | None, message: str, http_status: int | None) -> ErrorCategory:
-    text = f"{code or ''} {message}"
+def _classify(
+    hint: ErrorCategory | None,
+    message: str,
+    http_status: int | None,
+) -> ErrorCategory:
+    text = message
 
-    # A canonical quota code is itself reliable evidence, independent of the
-    # HTTP status or of ambiguous message wording.
-    if code in {"QUOTA", "QUOTA_EXCEEDED", "QUOTA_EXHAUSTED", "ACCOUNT_QUOTA"}:
+    # A terminal quota signal is reliable independent of HTTP status.
+    if hint is ErrorCategory.QUOTA_EXHAUSTED:
         return ErrorCategory.QUOTA_EXHAUSTED
 
     # 429 is ambiguous by nature: quota wording is required to escalate it.
     if http_status == 429:
         return ErrorCategory.QUOTA_EXHAUSTED if _has_quota_evidence(text) else ErrorCategory.RATE_LIMIT
 
-    if code is not None:
-        mapped = _DSH_CODE_MAP.get(code)
-        if mapped is not None:
-            if mapped is ErrorCategory.RATE_LIMIT and _has_quota_evidence(text):
-                return ErrorCategory.QUOTA_EXHAUSTED
-            return mapped
+    # Adapters may translate their harness's canonical codes into a category
+    # hint. Core never learns those codes.
+    if hint is not None:
+        if hint is ErrorCategory.RATE_LIMIT and _has_quota_evidence(text):
+            return ErrorCategory.QUOTA_EXHAUSTED
+        return hint
 
     if http_status in (401, 403):
         return ErrorCategory.QUOTA_EXHAUSTED if _has_quota_evidence(text) else ErrorCategory.AUTH_FAILED
@@ -333,6 +308,7 @@ def classify_provider_error(
     *,
     message: str = "",
     code: str | None = None,
+    category_hint: ErrorCategory | None = None,
     http_status: int | None = None,
     headers: Mapping[str, Any] | None = None,
     retry_after_seconds: float | None = None,
@@ -341,14 +317,17 @@ def classify_provider_error(
 ) -> ProviderError:
     """Classify one provider failure into :class:`ProviderError`.
 
-    ``code`` accepts a DSH canonical code (e.g. ``RATE_LIMIT``, ``QUOTA``,
-    ``TRANSPORT``); unknown codes fall back to message/HTTP heuristics and
-    may legitimately classify as ``UNKNOWN``.
+    ``code`` is opaque diagnostic metadata (stored as ``raw_code``); this
+    module never interprets a harness-specific code string. Adapters that do
+    know their harness's canonical codes may translate them into a neutral
+    ``category_hint``. Without a hint, classification falls back to
+    message/HTTP heuristics and may legitimately produce ``UNKNOWN``.
     """
 
     status = _as_http_status(http_status)
     safe_message = redact(message)
     code_normalized = code.strip().upper() if isinstance(code, str) and code.strip() else None
+    hint = category_hint if isinstance(category_hint, ErrorCategory) else None
 
     header_retry_after, header_reset_at = parse_retry_after(headers, now=now)
     if retry_after_seconds is None:
@@ -363,11 +342,11 @@ def classify_provider_error(
     if reset_at is None:
         reset_at = header_reset_at
 
-    category = _classify(code_normalized, safe_message, status)
+    category = _classify(hint, safe_message, status)
 
     evidence: dict[str, Any] = {}
-    if code_normalized:
-        evidence["dsh_code"] = code_normalized
+    if hint is not None:
+        evidence["category_hint"] = hint.value
     if status is not None:
         evidence["http_status"] = status
 

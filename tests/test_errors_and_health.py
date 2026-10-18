@@ -55,7 +55,9 @@ def test_explicit_quota_evidence_maps_to_quota_exhausted_and_cooldown() -> None:
     assert _health(tracker, "openai-codex")["status"] == "COOLDOWN"
 
     # A canonical quota code is sufficient evidence on its own.
-    coded = classify_provider_error("openai-codex", code="ACCOUNT_QUOTA", http_status=429)
+    coded = classify_provider_error(
+        "openai-codex", category_hint=ErrorCategory.QUOTA_EXHAUSTED, http_status=429
+    )
     assert coded.category is ErrorCategory.QUOTA_EXHAUSTED
 
 
@@ -90,7 +92,6 @@ def test_timeout_maps_to_network_error_and_degraded() -> None:
     error = classify_provider_error(
         "openai-codex",
         message="Request timed out after 30s",
-        code="TIMEOUT",
     )
 
     assert error.category is ErrorCategory.NETWORK_ERROR

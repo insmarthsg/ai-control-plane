@@ -5,7 +5,7 @@ Five states only: ``AVAILABLE``, ``DEGRADED``, ``COOLDOWN``, ``AUTH_REQUIRED``,
 move another provider's state (hard invariant, covered by tests).
 
 This module is harness-neutral: it consumes :class:`~core.errors.ProviderError`
-and never reads DSH logs, files, or zstd.
+and never reads execution logs, files, or a harness's internal schema.
 """
 
 from __future__ import annotations
@@ -65,11 +65,9 @@ def _iso(value: datetime | str | None) -> str:
 
 def _status_for(error: ProviderError) -> HealthStatus:
     if error.category is ErrorCategory.PROVIDER_UNAVAILABLE:
-        # A 5xx (or DSH SERVER code) is stronger evidence than a generic
-        # "provider unavailable" message, which stays DEGRADED.
-        strong = (error.http_status is not None and error.http_status >= 500) or (
-            (error.raw_code or "").upper() == "SERVER"
-        )
+        # A 5xx is stronger evidence than a generic "provider unavailable"
+        # message, which stays DEGRADED. No harness-specific code is inspected.
+        strong = error.http_status is not None and error.http_status >= 500
         return HealthStatus.UNAVAILABLE if strong else HealthStatus.DEGRADED
     return _CATEGORY_STATUS.get(error.category, HealthStatus.DEGRADED)
 

@@ -7,7 +7,10 @@ harness reports that a provider is unhealthy. Today it contains exactly one
 goal's worth of code: provider error classification and provider health state.
 It is intentionally not an orchestrator, router, scheduler, UI, or database.
 
-## Status: GOAL-01 only
+**Architecture contract: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
+(ACP-ARCH-01, frozen). It is normative; read it before adding capabilities.
+
+## Status: GOAL-01 + ACP-ARCH-01 (contract)
 
 Implemented:
 
@@ -17,6 +20,11 @@ Implemented:
   isolated per provider.
 - `adapters/dsh.py` — **FALLBACK_ONLY** reader for DSH session logs
   (`session.v4.jsonl.zstd`), marked `TEMPORARY_INTERNAL_INTERFACE`.
+- `tests/test_architecture.py` — frozen-boundary invariants.
+
+Architecture in one line: **capabilities, not workflows**; the Stable Core is
+only task identity, the capability contract, the event/state contract, and the
+composition boundary; every harness/vendor detail stays behind an adapter.
 
 Not implemented (later goals, by design):
 
@@ -93,5 +101,5 @@ boundary.
 python3 -m pytest -q
 ```
 
-Ten required scenarios are covered in `tests/`, plus adapter fixture tests and
-a core-isolation check.
+Ten required scenarios are covered in `tests/`, plus adapter fixture tests,
+core-isolation checks, and the ACP-ARCH-01 boundary invariants.
