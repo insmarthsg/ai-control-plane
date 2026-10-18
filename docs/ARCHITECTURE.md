@@ -2,7 +2,8 @@
 
 Status: **ACP-ARCH-01, frozen**. Baseline commit `e9d1730`.
 This document is normative. Code that contradicts it is a defect, not a precedent.
-Concrete Task State contract: [TASK_STATE.md](TASK_STATE.md) (GOAL-02).
+Concrete contracts: [TASK_STATE.md](TASK_STATE.md) (GOAL-02),
+[ROUTER.md](ROUTER.md) (GOAL-03).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -71,11 +72,11 @@ At contract level a capability declares:
 Capabilities are addressed through the composition boundary, not by importing
 each other. A capability must not reach into another capability's internals.
 
-**No runtime protocol is frozen in ACP-ARCH-01.** There is no registry, bus,
-loader, DI container, service locator, or workflow DSL. `core/capability.py`
-does not exist yet because current code (GOAL-01/GOAL-02) does not need it. It will be
-added only when GOAL-02/03 can show a concrete call site that a Protocol makes
-safer, and then only as a minimal Protocol.
+**No plugin runtime is frozen.** GOAL-03 earned exactly one minimal contract:
+`CapabilityCandidate` in `core/capability.py`, because the Router needs a
+concrete candidate to select. It is still a frozen dataclass — not a registry,
+bus, loader, DI container, service locator, or workflow DSL, and there is no
+invoke dispatch.
 
 `kind` is a role label. It does not imply ordering. `router` is listed only
 because routing may be a capability; routing is not part of the Stable Core.
@@ -405,6 +406,24 @@ verification for tasks that need them.
 
 ---
 
+## 17. Router Boundary (GOAL-03)
+
+Routing is a pure selection: `facts + constraints + policy → decision | NoRoute`.
+The Router reads Task facts and provider-health facts, selects at most one
+candidate, and stops.
+
+- It never executes a capability, calls a model, writes Task State, mutates
+  health, retries, or loops.
+- User REQUIRE/DENY/ALLOW outrank health and policy. A required-but-unavailable
+  capability yields `NoRoute`; it never authorizes silent substitution.
+- Capability availability and provider health are separate hard gates.
+- Continuation is classified as `CONTINUE` or `HANDOFF`; neither is executed.
+- `NoRoute` is a first-class result with per-candidate rejection reasons.
+- A judgment signal (future Jev) is advisory and may only break ties after all
+  hard gates and deterministic ranks.
+
+Concrete contract: [ROUTER.md](ROUTER.md).
+
 ## Appendix A — Current code map
 
 | Path | Role | Boundary |
@@ -416,6 +435,8 @@ verification for tasks that need them.
 | `core/task_store.py` | store Protocol + errors | storage-agnostic |
 | `core/redaction.py` | shared credential redaction | one choke point |
 | `stores/json_task_store.py` | atomic JSON persistence | implements the Protocol |
+| `core/capability.py` | candidate contract | dataclass only; no registry |
+| `core/router.py` | deterministic selection | no execution/store/health writes |
 | `tests/test_architecture.py` | invariant enforcement | — |
 
 Not present by design: Task State, Router, Jev, Human Control, UI, server, DB,

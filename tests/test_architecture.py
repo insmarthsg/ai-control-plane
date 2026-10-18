@@ -52,6 +52,7 @@ def test_core_imports_without_any_adapter() -> None:
     program = (
         "import sys\n"
         "import core.errors, core.provider_health, core.task, core.task_store\n"
+        "import core.capability, core.router\n"
         "loaded = sorted(m for m in sys.modules if m.split('.')[0] in {'adapters', 'stores'})\n"
         "assert not loaded, loaded\n"
     )
@@ -106,7 +107,7 @@ def test_task_core_has_no_storage_or_harness_imports() -> None:
         "adapters",
         "subprocess",
     }
-    for path in sorted((REPO_ROOT / "core").glob("task*.py")):
+    for path in sorted((REPO_ROOT / "core").glob("task*.py")) + sorted((REPO_ROOT / "core").glob("router*.py")) + sorted((REPO_ROOT / "core").glob("capability*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -118,6 +119,12 @@ def test_task_core_has_no_storage_or_harness_imports() -> None:
             for name in names:
                 root = name.split(".")[0]
                 assert root not in forbidden_roots, f"{path.name} imports {name}"
+
+
+def test_router_is_selection_only() -> None:
+    source = (REPO_ROOT / "core" / "router.py").read_text(encoding="utf-8")
+    for forbidden in ("def execute", "def retry", "while ", "task_store", "import stores"):
+        assert forbidden not in source, f"router.py contains {forbidden!r}"
 
 
 def test_task_core_has_no_harness_or_pipeline_vocabulary() -> None:
@@ -138,7 +145,7 @@ def test_task_core_has_no_harness_or_pipeline_vocabulary() -> None:
         "workflow_steps",
         "stage",
     )
-    for path in sorted((REPO_ROOT / "core").glob("task*.py")):
+    for path in sorted((REPO_ROOT / "core").glob("task*.py")) + sorted((REPO_ROOT / "core").glob("router*.py")) + sorted((REPO_ROOT / "core").glob("capability*.py")):
         text = path.read_text(encoding="utf-8").lower()
         for token in forbidden_tokens:
             assert token not in text, f"{path.name} leaks {token!r}"

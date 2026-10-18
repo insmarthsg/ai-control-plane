@@ -8,10 +8,11 @@ goal's worth of code: provider error classification and provider health state.
 It is intentionally not an orchestrator, router, scheduler, UI, or database.
 
 **Architecture contract: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
-(ACP-ARCH-01, frozen) and **[docs/TASK_STATE.md](docs/TASK_STATE.md)**
-(GOAL-02). They are normative; read them before adding capabilities.
+(ACP-ARCH-01, frozen), **[docs/TASK_STATE.md](docs/TASK_STATE.md)** (GOAL-02),
+and **[docs/ROUTER.md](docs/ROUTER.md)** (GOAL-03). They are normative; read
+them before adding capabilities.
 
-## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02
+## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02 + GOAL-03
 
 Implemented:
 
@@ -24,6 +25,9 @@ Implemented:
 - `core/task.py` + `core/task_store.py` + `stores/json_task_store.py` —
   persistent Task State: opaque identity, durable context, artifacts, execution
   cursor, interruptions, insertion frames, revision-checked updates.
+- `core/capability.py` + `core/router.py` — Thin Router: deterministic,
+  explainable selection over user constraints, capability availability,
+  provider health, and continuation compatibility. It never executes anything.
 - `tests/test_architecture.py` — frozen-boundary invariants.
 
 Architecture in one line: **capabilities, not workflows**; the Stable Core is
@@ -34,6 +38,9 @@ Task State is **not** workflow state: it records facts (including an execution
 cursor and temporary insertion frames) and never decides what runs next. It is
 persisted per task, survives process restart, and is independent of provider,
 model, session, and executor.
+
+The Router is **not** an orchestrator: it returns a decision or `NoRoute`, with
+per-candidate reasons. It does not execute, retry, fail over, or write state.
 
 Not implemented (later goals, by design):
 
@@ -110,7 +117,8 @@ boundary.
 python3 -m pytest -q
 ```
 
-GOAL-01 scenarios, ACP-ARCH-01 boundary invariants, and GOAL-02 continuity
-tests (including cross-process recovery, executor handoff, insertion nesting,
-optimistic concurrency, atomic-write failure, and secret non-persistence) are
-all covered in `tests/`.
+GOAL-01 scenarios, ACP-ARCH-01 boundary invariants, GOAL-02 continuity tests
+(cross-process recovery, executor handoff, insertion nesting, concurrency,
+atomic-write failure, secret non-persistence), and GOAL-03 routing tests
+(constraints, health gates, continuation/handoff, NoRoute, determinism,
+judgment boundary) are all covered in `tests/`.
