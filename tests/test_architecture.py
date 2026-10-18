@@ -53,7 +53,7 @@ def test_core_imports_without_any_adapter() -> None:
         "import sys\n"
         "import core.errors, core.provider_health, core.task, core.task_store\n"
         "import core.capability, core.router, core.execution, core.controller, core.runtime, core.human\n"
-        "import core.observation, core.recovery\n"
+        "import core.observation, core.recovery, core.workspace\n"
         "loaded = sorted(m for m in sys.modules if m.split('.')[0] in {'adapters', 'stores'})\n"
         "assert not loaded, loaded\n"
     )
@@ -118,6 +118,7 @@ def test_task_core_has_no_storage_or_harness_imports() -> None:
         + sorted((REPO_ROOT / "core").glob("human*.py"))
         + sorted((REPO_ROOT / "core").glob("observation*.py"))
         + sorted((REPO_ROOT / "core").glob("recovery*.py"))
+        + sorted((REPO_ROOT / "core").glob("workspace*.py"))
     ):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -166,6 +167,7 @@ def test_task_core_has_no_harness_or_pipeline_vocabulary() -> None:
         + sorted((REPO_ROOT / "core").glob("human*.py"))
         + sorted((REPO_ROOT / "core").glob("observation*.py"))
         + sorted((REPO_ROOT / "core").glob("recovery*.py"))
+        + sorted((REPO_ROOT / "core").glob("workspace*.py"))
     ):
         text = path.read_text(encoding="utf-8").lower()
         for token in forbidden_tokens:
@@ -197,3 +199,9 @@ def test_observation_and_recovery_never_execute_or_mutate() -> None:
             "from .controller", "RuntimeManager",
         ):
             assert forbidden not in source, f"{name} contains {forbidden!r}"
+
+
+def test_workspace_core_has_no_git_implementation() -> None:
+    source = (REPO_ROOT / "core" / "workspace.py").read_text(encoding="utf-8")
+    for forbidden in ("subprocess", "import adapters", "GitWorkspaceGuard", "git -C"):
+        assert forbidden not in source, f"core/workspace.py contains {forbidden!r}"

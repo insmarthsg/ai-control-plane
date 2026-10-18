@@ -35,6 +35,7 @@ class RecoveryStatus(str, Enum):
     ORPHANED = "ORPHANED"
     UNCERTAIN = "UNCERTAIN"
     UNKNOWN = "UNKNOWN"
+    WORKSPACE_RECONCILIATION_REQUIRED = "WORKSPACE_RECONCILIATION_REQUIRED"
 
 
 class RecommendedAction(str, Enum):
@@ -139,6 +140,16 @@ class Reconciler:
                 "a human decision is pending; execution cannot resume",
                 RecommendedAction.WAIT_FOR_HUMAN,
             )
+
+        if observed.workspace is not None:
+            if not observed.workspace.execution_allowed:
+                evidence.append(Evidence("WORKSPACE_VERIFICATION_FAILED", observed.workspace.reason))
+                return result(
+                    RecoveryStatus.WORKSPACE_RECONCILIATION_REQUIRED,
+                    f"workspace is not verified: {observed.workspace.reason}",
+                    RecommendedAction.MANUAL_REVIEW,
+                )
+            evidence.append(Evidence("WORKSPACE_VERIFIED"))
 
         if any(issue.code == "HUMAN_QUERY_FAILED" for issue in observed.issues):
             return result(

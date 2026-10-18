@@ -61,6 +61,7 @@ class ExecutionRequest:
     execution_mode: ExecutionMode = ExecutionMode.FRESH
     continuation_ref: str | None = None
     checkpoint: str | None = None
+    workspace_path: str | None = None
     constraints: Mapping[str, Any] = field(default_factory=dict)
     handoff_reason: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)

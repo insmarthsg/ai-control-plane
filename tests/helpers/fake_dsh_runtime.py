@@ -124,6 +124,7 @@ def main():
             if state["resumed"]:
                 body += "\nRESUMED:true"
             body += f"\nSESSION_ECHO:{session_id}"
+            body += f"\nCWD:{os.getcwd()}"
 
             notify("session.event", {"sessionId": session_id, "event": assistant_event(session_id, body)})
             notify("session.event", {"sessionId": session_id, "event": {

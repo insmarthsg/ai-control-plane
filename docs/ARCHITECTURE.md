@@ -7,7 +7,8 @@ Concrete contracts: [TASK_STATE.md](TASK_STATE.md) (GOAL-02),
 [DSH_EXECUTION_ADAPTER.md](DSH_EXECUTION_ADAPTER.md) (GOAL-04C),
 [RUNTIME_CONTROL.md](RUNTIME_CONTROL.md) (GOAL-05),
 [HUMAN_GATE.md](HUMAN_GATE.md) (GOAL-06),
-[OBSERVABILITY_RECOVERY.md](OBSERVABILITY_RECOVERY.md) (GOAL-07).
+[OBSERVABILITY_RECOVERY.md](OBSERVABILITY_RECOVERY.md) (GOAL-07),
+[WORKSPACE_BINDING.md](WORKSPACE_BINDING.md) (GOAL-08A).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -501,6 +502,21 @@ never parses continuation refs.
 
 Concrete contract: [OBSERVABILITY_RECOVERY.md](OBSERVABILITY_RECOVERY.md).
 
+## 22. Workspace Boundary (GOAL-08A)
+
+A Task that touches project files is bound to an explicit workspace
+(repository identity + worktree + branch + baseline + tracking ref). Expected
+facts are durable; actual facts are observed and never overwrite them.
+
+Before execution, the controller runs a read-only guard. Wrong worktree,
+branch, repository, dirty state, missing tracking ref, divergence, detached
+HEAD, missing/canonical paths, or a TOCTOU change block execution: no
+capability call, no runtime, no Provider Health change. The verified worktree
+becomes the execution cwd, independent of the caller's cwd or model text.
+The guard never mutates Git; safe fast-forward is only a recommendation.
+
+Concrete contract: [WORKSPACE_BINDING.md](WORKSPACE_BINDING.md).
+
 ## Appendix A — Current code map
 
 | Path | Role | Boundary |
@@ -521,6 +537,8 @@ Concrete contract: [OBSERVABILITY_RECOVERY.md](OBSERVABILITY_RECOVERY.md).
 | `core/human.py` | insertable human decision gate | no runtime/provider/execution calls |
 | `core/observation.py` | read-only Task/runtime/human/health projection | no writes |
 | `core/recovery.py` | evidence-based recovery classification | no execution/mutation |
+| `core/workspace.py` | workspace binding/guard contract | no Git implementation |
+| `adapters/git_workspace.py` | read-only Git verification | no git mutations |
 | `tests/test_architecture.py` | invariant enforcement | — |
 
 Not present by design: Task State, Router, Jev, Human Control, UI, server, DB,

@@ -14,6 +14,7 @@ from typing import Any, Mapping, Protocol, Sequence
 
 from .redaction import redact, redact_data
 from .task import CapabilityActivity, TaskEvent, TaskState
+from .workspace import WorkspaceGuard, binding_for
 from .task_store import TaskStateStore
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "RuntimeQuery",
     "TaskObservation",
     "TimelineEntry",
+    "WorkspaceObservation",
 ]
 
 _SAFE_EVENT_KEYS = (
@@ -113,6 +115,48 @@ class HealthObservation:
 
 
 @dataclass(frozen=True)
+class WorkspaceObservation:
+    workspace_id: str
+    kind: str
+    root_path: str
+    status: str
+    reason: str
+    execution_allowed: bool
+    repository_root: str | None = None
+    worktree_path: str | None = None
+    branch: str | None = None
+    baseline_commit: str | None = None
+    tracking_ref: str | None = None
+    expected: Mapping[str, Any] = field(default_factory=dict)
+    actual: Mapping[str, Any] = field(default_factory=dict)
+    mismatches: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    recommended_action: str = "NONE"
+    verified_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "workspace_id": redact(self.workspace_id),
+            "kind": redact(self.kind),
+            "root_path": redact(self.root_path),
+            "status": self.status,
+            "reason": self.reason,
+            "execution_allowed": self.execution_allowed,
+            "repository_root": redact(self.repository_root) if self.repository_root else None,
+            "worktree_path": redact(self.worktree_path) if self.worktree_path else None,
+            "branch": redact(self.branch) if self.branch else None,
+            "baseline_commit": self.baseline_commit,
+            "tracking_ref": redact(self.tracking_ref) if self.tracking_ref else None,
+            "expected": redact_data(dict(self.expected)),
+            "actual": redact_data(dict(self.actual)),
+            "mismatches": list(self.mismatches),
+            "warnings": list(self.warnings),
+            "recommended_action": self.recommended_action,
+            "verified_at": self.verified_at,
+        }
+
+
+@dataclass(frozen=True)
 class ObservationIssue:
     code: str
     detail: str = ""
@@ -157,6 +201,7 @@ class TaskObservation:
     runtimes: tuple[RuntimeObservation, ...] = ()
     pending_human: HumanObservation | None = None
     provider_health: tuple[HealthObservation, ...] = ()
+    workspace: WorkspaceObservation | None = None
     issues: tuple[ObservationIssue, ...] = ()
     stale_snapshot: bool = False
 
@@ -195,6 +240,7 @@ class TaskObservation:
             "runtimes": [runtime.to_dict() for runtime in self.runtimes],
             "pending_human": self.pending_human.to_dict() if self.pending_human else None,
             "provider_health": [health.to_dict() for health in self.provider_health],
+            "workspace": self.workspace.to_dict() if self.workspace else None,
             "issues": [issue.to_dict() for issue in self.issues],
             "stale_snapshot": self.stale_snapshot,
         }
@@ -218,11 +264,13 @@ class Observer:
         runtime: RuntimeQuery | None = None,
         human: Any | None = None,
         health: ProviderHealthQuery | None = None,
+        workspace_guard: WorkspaceGuard | None = None,
     ) -> None:
         self._store = store
         self._runtime = runtime
         self._human = human
         self._health = health
+        self._workspace_guard = workspace_guard
 
     def observe(self, task_id: str) -> TaskObservation:
         task = self._store.get_task(task_id)
@@ -231,12 +279,14 @@ class Observer:
         runtimes: tuple[RuntimeObservation, ...] = ()
         pending: HumanObservation | None = None
         health: tuple[HealthObservation, ...] = ()
+        workspace: WorkspaceObservation | None = None
 
         for attempt in range(2):
             issues = []
             runtimes = self._runtime_view(task_id, issues)
             pending = self._human_view(task_id, issues)
             health = self._health_view(issues)
+            workspace = self._workspace_view(task, issues)
             latest = self._store.get_task(task_id)
             if latest.revision == task.revision:
                 break
@@ -268,6 +318,7 @@ class Observer:
             runtimes=runtimes,
             pending_human=pending,
             provider_health=health,
+            workspace=workspace,
             issues=tuple(issues),
             stale_snapshot=stale,
         )
@@ -322,6 +373,71 @@ class Observer:
             question=request.question,
             allowed_actions=tuple(action.value for action in request.allowed_actions),
             created_at=request.created_at,
+        )
+
+    def _workspace_view(
+        self, task: TaskState, issues: list[ObservationIssue]
+    ) -> WorkspaceObservation | None:
+        binding = binding_for(task)
+        if binding is None:
+            return None
+        if self._workspace_guard is None:
+            return WorkspaceObservation(
+                workspace_id=binding.workspace_id,
+                kind=binding.kind,
+                root_path=binding.root_path,
+                status="UNVERIFIED",
+                reason="NO_GUARD",
+                execution_allowed=False,
+                repository_root=binding.repository_root,
+                worktree_path=binding.worktree_path,
+                branch=binding.branch,
+                baseline_commit=binding.baseline_commit,
+                tracking_ref=binding.tracking_ref,
+                expected=binding.to_payload(),
+                actual={"guard": "not_configured"},
+                mismatches=("workspace_guard",),
+                recommended_action="MANUAL_REVIEW",
+            )
+        try:
+            verification = self._workspace_guard.verify(binding)
+        except Exception:
+            issues.append(ObservationIssue("WORKSPACE_QUERY_FAILED", "workspace verification failed"))
+            return WorkspaceObservation(
+                workspace_id=binding.workspace_id,
+                kind=binding.kind,
+                root_path=binding.root_path,
+                status="UNKNOWN",
+                reason="WORKSPACE_QUERY_FAILED",
+                execution_allowed=False,
+                repository_root=binding.repository_root,
+                worktree_path=binding.worktree_path,
+                branch=binding.branch,
+                baseline_commit=binding.baseline_commit,
+                tracking_ref=binding.tracking_ref,
+                expected=binding.to_payload(),
+                actual={"error": "guard_failed"},
+                mismatches=("workspace_guard",),
+                recommended_action="MANUAL_REVIEW",
+            )
+        return WorkspaceObservation(
+            workspace_id=verification.workspace_id,
+            kind=binding.kind,
+            root_path=binding.root_path,
+            status=verification.status.value,
+            reason=verification.reason.value,
+            execution_allowed=verification.execution_allowed,
+            repository_root=(verification.actual.get("repository_root") or binding.repository_root),
+            worktree_path=(verification.actual.get("worktree_path") or binding.worktree_path),
+            branch=(verification.actual.get("branch") or binding.branch),
+            baseline_commit=binding.baseline_commit,
+            tracking_ref=binding.tracking_ref,
+            expected=verification.expected,
+            actual=verification.actual,
+            mismatches=verification.mismatches,
+            warnings=verification.warnings,
+            recommended_action=verification.recommended_action.value,
+            verified_at=verification.verified_at,
         )
 
     def _health_view(self, issues: list[ObservationIssue]) -> tuple[HealthObservation, ...]:

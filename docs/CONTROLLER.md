@@ -147,6 +147,16 @@ process-per-execution, event-driven completion). See
 still requires a DSH runtime with `session/resume` (0.2.x); turn-level cancel
 remains process-level via `terminate(execution_id)`.
 
+## 13.1 Workspace gate (GOAL-08A)
+
+If the Task carries a durable `workspace-binding` artifact, the controller
+verifies it before execution (and again immediately before invoke). On failure
+it records `WORKSPACE_VERIFICATION_FAILED`, sets the Task to `BLOCKED`, returns
+`WORKSPACE_BLOCKED`, and runs nothing. On success it records
+`WORKSPACE_VERIFIED` and passes the verified worktree as
+`ExecutionRequest.workspace_path`; the caller's cwd and model output cannot
+override it. See [WORKSPACE_BINDING.md](WORKSPACE_BINDING.md).
+
 ## 14. Non-goals
 
 No UI, Jev, human gate, pause/cancel/resume implementation, scheduler, queue,

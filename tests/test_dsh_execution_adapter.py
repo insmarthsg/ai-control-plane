@@ -242,3 +242,14 @@ def test_runtime_manager_cancel_reaches_dsh_runtime(tmp_path: Path) -> None:
     assert manager.status(record.execution_id).status is RuntimeStatus.STOPPED
     internal = adapter.get_execution(record.execution_id)
     assert internal is not None and internal["status"] == "TERMINATED"
+
+
+def test_adapter_uses_request_workspace_path_as_spawn_cwd(tmp_path: Path) -> None:
+    bound = tmp_path / "bound-workspace"
+    bound.mkdir()
+    adapter = make_adapter(tmp_path, cwd=str(tmp_path / "caller-cwd"))
+    result = adapter.execute(
+        make_request(objective="MARK_COMPLETED", workspace_path=str(bound))
+    )
+    assert isinstance(result, ExecutionResult)
+    assert f"CWD:{bound}" in (result.output or "")

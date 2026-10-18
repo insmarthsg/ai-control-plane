@@ -56,6 +56,16 @@ from .task_store import (
     TaskStateStore,
     TaskStoreError,
 )
+from .workspace import (
+    WorkspaceAction,
+    WorkspaceBinding,
+    WorkspaceGuard,
+    WorkspaceReason,
+    WorkspaceStatus,
+    WorkspaceVerification,
+    binding_for,
+    record_verification,
+)
 
 __all__ = [
     "AdvanceOutcome",
@@ -73,6 +83,7 @@ class AdvanceStatus(str, Enum):
     NO_ROUTE = "NO_ROUTE"
     FAILED = "FAILED"
     HUMAN_REQUIRED = "HUMAN_REQUIRED"
+    WORKSPACE_BLOCKED = "WORKSPACE_BLOCKED"
     CONFLICT = "CONFLICT"
     PERSISTENCE_FAILED = "PERSISTENCE_FAILED"
 
@@ -133,6 +144,7 @@ class TaskController:
         health: ProviderHealthPort,
         capabilities: Mapping[str, ExecutionCapability],
         human_gate: HumanGatePort | None = None,
+        workspace_guard: WorkspaceGuard | None = None,
         actor: str = "task-controller",
     ) -> None:
         self._store = store
@@ -140,6 +152,7 @@ class TaskController:
         self._health = health
         self._capabilities = dict(capabilities)
         self._human_gate = human_gate
+        self._workspace_guard = workspace_guard
         self._actor = actor
 
     def advance(
@@ -266,7 +279,18 @@ class TaskController:
                 next_condition="blocked",
             )
 
-        request = self._build_request(task, selected, decision, constraints, invocation_id)
+        binding = binding_for(task)
+        workspace_path = None
+        if binding is not None:
+            task, blocked, workspace_path = self._gate_workspace(
+                task, binding, decision, invocation_id
+            )
+            if blocked is not None:
+                return blocked
+
+        request = self._build_request(
+            task, selected, decision, constraints, invocation_id, workspace_path
+        )
 
         try:
             task = self._store.record_event(
@@ -363,6 +387,7 @@ class TaskController:
         decision: RoutingDecision,
         constraints: UserConstraints,
         invocation_id: str,
+        workspace_path: str | None = None,
     ) -> ExecutionRequest:
         if decision.mode is ContinuationMode.CONTINUE:
             mode = ExecutionMode.CONTINUE
@@ -389,6 +414,7 @@ class TaskController:
             execution_mode=mode,
             continuation_ref=continuation_ref,
             checkpoint=checkpoint,
+            workspace_path=workspace_path,
             constraints={
                 "required": sorted(constraints.required),
                 "denied": sorted(constraints.denied),
@@ -396,6 +422,164 @@ class TaskController:
             },
             handoff_reason=handoff_reason,
             metadata={"capability_id": candidate.capability_id, "capability_kind": candidate.kind},
+        )
+
+    # ------------------------------------------------------------ workspace
+
+    def _gate_workspace(
+        self,
+        task: TaskState,
+        binding: WorkspaceBinding,
+        decision: RoutingDecision,
+        invocation_id: str,
+    ) -> tuple[TaskState, AdvanceOutcome | None, str | None]:
+        if self._workspace_guard is None:
+            verification = WorkspaceVerification(
+                workspace_id=binding.workspace_id,
+                status=WorkspaceStatus.BLOCKED,
+                reason=WorkspaceReason.UNKNOWN,
+                expected=binding.to_payload(),
+                actual={"guard": "not_configured"},
+                mismatches=("workspace_guard",),
+                recommended_action=WorkspaceAction.MANUAL_REVIEW,
+            )
+            try:
+                task = record_verification(
+                    self._store, task.task_id, verification,
+                    expected_revision=task.revision, actor=self._actor,
+                )
+            except RevisionConflict:
+                return task, self._conflict(task, invocation_id,
+                                            "task changed during workspace verification",
+                                            decision=decision), None
+            except TaskStoreError as exc:
+                return task, self._persistence_failure(task, invocation_id, exc,
+                                                       decision=decision), None
+            return self._block_workspace(task, verification, decision, invocation_id)
+
+        try:
+            first = self._workspace_guard.verify(binding)
+        except Exception:
+            first = WorkspaceVerification(
+                workspace_id=binding.workspace_id,
+                status=WorkspaceStatus.BLOCKED,
+                reason=WorkspaceReason.UNKNOWN,
+                expected=binding.to_payload(),
+                actual={"error": "guard_failed"},
+                mismatches=("workspace_guard",),
+                recommended_action=WorkspaceAction.MANUAL_REVIEW,
+            )
+
+        try:
+            task = record_verification(
+                self._store,
+                task.task_id,
+                first,
+                expected_revision=task.revision,
+                actor=self._actor,
+            )
+        except RevisionConflict:
+            return task, self._conflict(task, invocation_id, "task changed during workspace verification",
+                                        decision=decision), None
+        except TaskStoreError as exc:
+            return task, self._persistence_failure(task, invocation_id, exc, decision=decision), None
+
+        if not first.execution_allowed:
+            return self._block_workspace(task, first, decision, invocation_id)
+
+        try:
+            second = self._workspace_guard.verify(binding)
+        except Exception:
+            second = WorkspaceVerification(
+                workspace_id=binding.workspace_id,
+                status=WorkspaceStatus.BLOCKED,
+                reason=WorkspaceReason.UNKNOWN,
+                expected=binding.to_payload(),
+                actual={"error": "guard_failed"},
+                mismatches=("workspace_guard",),
+                recommended_action=WorkspaceAction.MANUAL_REVIEW,
+            )
+
+        if self._workspace_signature(first) != self._workspace_signature(second):
+            changed = WorkspaceVerification(
+                workspace_id=second.workspace_id,
+                status=WorkspaceStatus.BLOCKED,
+                reason=WorkspaceReason.WORKSPACE_CHANGED_AFTER_VERIFY,
+                expected=second.expected,
+                actual=second.actual,
+                mismatches=("workspace_changed",),
+                warnings=second.warnings,
+                recommended_action=WorkspaceAction.MANUAL_REVIEW,
+            )
+            try:
+                task = record_verification(
+                    self._store, task.task_id, changed,
+                    expected_revision=task.revision, actor=self._actor,
+                    changed_after_verify=True,
+                )
+            except RevisionConflict:
+                return task, self._conflict(task, invocation_id, "task changed before execution",
+                                            decision=decision), None
+            except TaskStoreError as exc:
+                return task, self._persistence_failure(task, invocation_id, exc, decision=decision), None
+            return self._block_workspace(task, changed, decision, invocation_id)
+
+        if not second.execution_allowed:
+            try:
+                task = record_verification(
+                    self._store, task.task_id, second,
+                    expected_revision=task.revision, actor=self._actor,
+                )
+            except RevisionConflict:
+                return task, self._conflict(task, invocation_id,
+                                            "task changed during workspace verification",
+                                            decision=decision), None
+            except TaskStoreError as exc:
+                return task, self._persistence_failure(task, invocation_id, exc,
+                                                       decision=decision), None
+            return self._block_workspace(task, second, decision, invocation_id)
+
+        cwd = (
+            second.actual.get("worktree_path")
+            or binding.worktree_path
+            or binding.root_path
+        )
+        return task, None, str(cwd)
+
+    def _block_workspace(
+        self,
+        task: TaskState,
+        verification: WorkspaceVerification,
+        decision: RoutingDecision,
+        invocation_id: str,
+    ) -> tuple[TaskState, AdvanceOutcome | None, str | None]:
+        try:
+            task = self._store.set_lifecycle(
+                task.task_id,
+                LifecycleStatus.BLOCKED,
+                expected_revision=task.revision,
+                actor=self._actor,
+            )
+        except RevisionConflict:
+            return task, self._conflict(task, invocation_id, "task changed while blocking on workspace",
+                                        decision=decision), None
+        except TaskStoreError as exc:
+            return task, self._persistence_failure(task, invocation_id, exc, decision=decision), None
+        return task, self._outcome(
+            task,
+            AdvanceStatus.WORKSPACE_BLOCKED,
+            invocation_id,
+            routing_decision=decision,
+            message=f"workspace blocked: {verification.reason.value}",
+            next_condition="blocked",
+        ), None
+
+    @staticmethod
+    def _workspace_signature(verification: WorkspaceVerification) -> tuple:
+        actual = verification.actual
+        return tuple(
+            actual.get(key)
+            for key in ("worktree_path", "repository_root", "branch", "head", "dirty", "tracking_head")
         )
 
     # -------------------------------------------------------------- results

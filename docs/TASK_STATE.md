@@ -70,7 +70,7 @@ no new artifacts, checkpoints, or insertions.
 JSON), `reference` (opaque external pointer), `created_at`, `metadata`.
 
 `kind` is free-form (`analysis`, `plan`, `patch`, `evidence`, `review-result`,
-`answer`, …). The core has no artifact-type registry. Small payloads are inline;
+`answer`, `workspace-binding`, …). The core has no artifact-type registry. Small payloads are inline;
 large objects are referenced, not embedded.
 
 ## 5. Execution cursor
@@ -172,7 +172,8 @@ Current types: `TASK_CREATED`, `TASK_STARTED`, `TASK_PAUSED`, `TASK_BLOCKED`,
 `CHECKPOINT_SAVED`, `TASK_INTERRUPTED`, `INSERTION_PUSHED`,
 `INSERTION_COMPLETED`, `ROUTING_DECIDED`, `EXECUTION_STARTED`,
 `EXECUTION_RESULT`, `EXECUTION_FAILED`, `CAPABILITY_UNRESOLVED`,
-`HUMAN_DECISION_REQUESTED`, `HUMAN_DECISION_RESOLVED`.
+`HUMAN_DECISION_REQUESTED`, `HUMAN_DECISION_RESOLVED`, `WORKSPACE_BINDING_CREATED`,
+`WORKSPACE_VERIFIED`, `WORKSPACE_VERIFICATION_FAILED`.
 
 Most mutations append one event at the resulting revision; an execution result
 that completes a task appends `EXECUTION_RESULT` and `TASK_COMPLETED` in the

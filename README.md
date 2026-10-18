@@ -14,7 +14,7 @@ It is intentionally not an orchestrator, router, scheduler, UI, or database.
 [docs/DSH_EXECUTION_SEAM.md](docs/DSH_EXECUTION_SEAM.md) audit (GOAL-04B).
 They are normative; read them before adding capabilities.
 
-## Status: GOAL-01 … GOAL-06 + GOAL-07 (observability/recovery)
+## Status: GOAL-01 … GOAL-07 + GOAL-08A (workspace binding)
 
 Implemented:
 
@@ -47,6 +47,10 @@ Implemented:
   ordered timeline, evidence-based recovery classification (`ACTIVE`,
   `WAITING_HUMAN`, `RECOVERABLE`, `HANDOFF_POSSIBLE`, `BLOCKED`, `ORPHANED`,
   `UNCERTAIN`, `TERMINAL`, `LOST`) with recommended actions only.
+- `core/workspace.py` + `adapters/git_workspace.py` — durable workspace
+  binding and read-only Git guard: worktree/branch/repository identity,
+  baseline/tracking truth, dirty/wrong-worktree fail-closed, execution cwd
+  enforcement, no git mutation.
 - `tests/test_architecture.py` — frozen-boundary invariants.
 
 Architecture in one line: **capabilities, not workflows**; the Stable Core is

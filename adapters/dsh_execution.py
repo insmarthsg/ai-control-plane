@@ -330,8 +330,9 @@ class DSHExecutionAdapter:
             return left
 
         try:
+            workspace = request.workspace_path or self._cwd
             try:
-                runtime = self._spawn(events)
+                runtime = self._spawn(events, workspace)
             except OSError as exc:
                 finish("FAILED")
                 return self._failure(
@@ -347,7 +348,7 @@ class DSHExecutionAdapter:
 
             try:
                 initialize_params: dict[str, Any] = {
-                    "cwd": self._cwd,
+                    "cwd": workspace,
                     "provider": self._provider,
                 }
                 if self._model:
@@ -500,7 +501,7 @@ class DSHExecutionAdapter:
             "mode": record.mode,
         }
 
-    def _spawn(self, collector: _EventCollector) -> _SdkRuntime:
+    def _spawn(self, collector: _EventCollector, cwd: str) -> _SdkRuntime:
         env = dict(os.environ)
         if self._dsh_home:
             env["DSH_HOME"] = self._dsh_home
@@ -512,7 +513,7 @@ class DSHExecutionAdapter:
                 if isinstance(event, Mapping):
                     collector.add(event)
 
-        return _SdkRuntime(self._runtime_cmd, cwd=self._cwd, env=env,
+        return _SdkRuntime(self._runtime_cmd, cwd=cwd, env=env,
                            on_notification=on_notification)
 
     def _resolve_session(self, request: ExecutionRequest) -> tuple[str, str]:

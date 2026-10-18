@@ -151,6 +151,15 @@ checkpoint present, continuation present, then reconciles to `RECOVERABLE` or
 and events are unchanged. Failures in health/runtime/human queries degrade the
 view with evidence rather than aborting durable facts.
 
+## 14.1 Workspace observation (GOAL-08A)
+
+When a Task has a `workspace-binding`, `TaskObservation.workspace` exposes
+workspace id, status/reason, expected vs actual repository/worktree/branch/
+HEAD/tracking/dirty, mismatches, warnings, and `execution_allowed`.
+Reconciliation returns `WORKSPACE_RECONCILIATION_REQUIRED` with
+`WORKSPACE_VERIFICATION_FAILED` evidence when the binding no longer verifies;
+it never resumes or repairs the workspace.
+
 ## 15. Known gaps
 
 - No HTTP/UI; DTOs only.
