@@ -14,7 +14,7 @@ It is intentionally not an orchestrator, router, scheduler, UI, or database.
 [docs/DSH_EXECUTION_SEAM.md](docs/DSH_EXECUTION_SEAM.md) audit (GOAL-04B).
 They are normative; read them before adding capabilities.
 
-## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02 + GOAL-03 + GOAL-04 + GOAL-04B (audit)
+## Status: GOAL-01 + ACP-ARCH-01 + GOAL-02 + GOAL-03 + GOAL-04 + GOAL-04B/04C (DSH bridge)
 
 Implemented:
 
@@ -30,6 +30,11 @@ Implemented:
 - `core/capability.py` + `core/router.py` — Thin Router: deterministic,
   explainable selection over user constraints, capability availability,
   provider health, and continuation compatibility. It never executes anything.
+- `adapters/dsh_execution.py` — real DSH execution: drives `dsh --profile sdk`
+  (bridge-owned execution id, process-per-execution, event completion,
+  timeout/terminate seam). Real provider smoke verified on
+  `deepseek-official/deepseek-chat`; cross-process CONTINUE needs DSH 0.2.x
+  (`session/resume`).
 - `core/execution.py` + `core/controller.py` — bounded Task Controller:
   one `advance()` loads state, routes, invokes exactly one execution
   capability, persists the result, and returns a structured outcome.

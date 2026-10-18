@@ -9,3 +9,6 @@ dependencies = []
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra"
+markers = [
+    "real_dsh: real provider smoke; requires ACP_REAL_DSH_SMOKE=1",
+]

@@ -274,6 +274,12 @@ Do not treat `messageId` as an execution id; it is a queue receipt.
 
 ## 11. Missing capabilities
 
+Post-audit correction (confirmed by GOAL-04C against the installed CLI):
+0.1.5-rc.3 also **lacks `session/wait` and `session/resume`** — those methods
+exist only in the 0.2.1-rc.2 app runtime documented above. Consequences:
+completion must be derived from `turn/end` events, and cross-process CONTINUE
+is impossible on 0.1.5 (`session "<id>" already exists` on duplicate prompt).
+
 - No native execution/turn/attempt id at start (only session id + message id).
 - No explicit WAITING / TOOL_EXECUTION status.
 - No cancel/close over SDK.

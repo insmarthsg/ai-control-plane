@@ -3,7 +3,8 @@
 Status: **ACP-ARCH-01, frozen**. Baseline commit `e9d1730`.
 This document is normative. Code that contradicts it is a defect, not a precedent.
 Concrete contracts: [TASK_STATE.md](TASK_STATE.md) (GOAL-02),
-[ROUTER.md](ROUTER.md) (GOAL-03), [CONTROLLER.md](CONTROLLER.md) (GOAL-04).
+[ROUTER.md](ROUTER.md) (GOAL-03), [CONTROLLER.md](CONTROLLER.md) (GOAL-04),
+[DSH_EXECUTION_ADAPTER.md](DSH_EXECUTION_ADAPTER.md) (GOAL-04C).
 
 Scope of this document: boundaries and invariants only. It deliberately does
 not implement Task State, a router, a registry, a bus, a plugin runtime, or Jev.
@@ -455,6 +456,7 @@ Concrete contract: [CONTROLLER.md](CONTROLLER.md).
 | `core/errors.py` | provider error taxonomy, classification, redaction | harness-neutral; no vendor vocabulary |
 | `core/provider_health.py` | per-provider health state machine | harness-neutral; opaque provider keys |
 | `adapters/dsh.py` | DSH session-log → core signals | `TEMPORARY_INTERNAL_INTERFACE`, `FALLBACK_ONLY` |
+| `adapters/dsh_execution.py` | real execution over `dsh --profile sdk` | implements ExecutionCapability; process-per-execution |
 | `core/task.py` | Task State domain model | no storage/harness imports |
 | `core/task_store.py` | store Protocol + errors | storage-agnostic |
 | `core/redaction.py` | shared credential redaction | one choke point |

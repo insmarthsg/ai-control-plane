@@ -140,9 +140,12 @@ seams, not just the one-shot headless CLI:
   errors collapse to `end_turn`.
 
 Headless is one-shot text only; child tools (`interrupt_agent`) are not an
-external API. **DSH_EXECUTION_ADAPTER = PARTIAL**: a bridge is feasible, but no
-native execution/turn id exists and the SDK has no turn-level cancel. The concrete bridge decision is recorded in the seam audit; no adapter was added in
-this goal.
+external API. **GOAL-04C implemented the bridge**: `adapters/dsh_execution.py`
+drives a real `dsh --profile sdk` runtime (bridge-owned `execution_id`,
+process-per-execution, event-driven completion). See
+[DSH_EXECUTION_ADAPTER.md](DSH_EXECUTION_ADAPTER.md). Cross-process CONTINUE
+still requires a DSH runtime with `session/resume` (0.2.x); turn-level cancel
+remains process-level via `terminate(execution_id)`.
 
 ## 14. Non-goals
 
