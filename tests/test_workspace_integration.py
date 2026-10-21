@@ -328,3 +328,23 @@ def test_read_only_policy_is_durable(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded.policy.read_only is True
     assert GUARD.verify(loaded).execution_allowed is True
+
+
+def test_binding_access_mode_reaches_request_and_execution_event(tmp_path):
+    from core.execution import AccessMode
+
+    fixture = build(tmp_path)
+    for read_only, expected in [(True, AccessMode.READ_ONLY), (False, AccessMode.WORKSPACE_WRITE)]:
+        store, task = running_bound_task(
+            tmp_path / expected.value, fixture,
+            policy=WorkspacePolicy(read_only=read_only, require_tracking_ref=True),
+        )
+        capability = CwdCapability()
+        ctl, _ = controller(store, capability)
+        outcome = ctl.advance(task.task_id, candidates=[
+            CapabilityCandidate("cap-a", "execution", provider="p")])
+        assert outcome.status is AdvanceStatus.COMPLETED
+        assert capability.requests[0].access_mode is expected
+        event = next(e for e in store.list_events(task.task_id) if e.type == "EXECUTION_STARTED")
+        assert event.data["access_mode"] == expected.value
+        assert event.data["workspace_id"] == "ws-e2e"

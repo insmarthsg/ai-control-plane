@@ -35,11 +35,12 @@ def adapter():
     from adapters.dsh_execution import DSHExecutionAdapter
 
     return DSHExecutionAdapter(
+        require_process_tree=False,  # Opt-in smoke exercises group cleanup only.
         provider=PROVIDER,
         model=MODEL,
         cwd=str(REPO_ROOT),
         timeout_seconds=180.0,
-        env_extra={"DSH_PERMISSION_MODE": "read-only"},
+        permission_mode="read-only",
     )
 
 
@@ -80,6 +81,7 @@ def test_real_start_status_cancel() -> None:
         request=ExecutionRequest(
             invocation_id="real-runtime-cancel-1",
             task_id="real-runtime-cancel",
+            workspace_path=str(REPO_ROOT),
             objective=(
                 "Write a 900-word detailed essay about the history of computing. "
                 "Do not use any tools."

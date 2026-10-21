@@ -67,11 +67,12 @@ def stack(tmp_path: Path, capability=None, *, with_demo: bool = True):
     fixture = build(tmp_path)
     guard = GitWorkspaceGuard()
     specs = [
-        CapabilitySpec("fake", "Fake · test", "p", "m", capability or FakeWorkspaceCapability()),
+        CapabilitySpec("fake", "Fake · test", "p", "m", capability or FakeWorkspaceCapability(),
+                       worker_kind="NONE", sandbox="NONE"),
     ]
     if with_demo:
         specs.append(CapabilitySpec("demo-human", "Demo · Human Gate", "local", "demo",
-                                    HumanGateDemoCapability()))
+                                    HumanGateDemoCapability(), worker_kind="NONE", sandbox="NONE"))
     app = ControlConsole(data_dir=tmp_path / "data", guard=guard, specs=specs)
     server = make_server(app, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -300,7 +301,7 @@ def test_reload_and_server_restart_preserve_durable_truth(tmp_path: Path) -> Non
     # New ControlConsole instance = server restart, same durable store.
     app2 = ControlConsole(data_dir=tmp_path / "data", guard=GitWorkspaceGuard(),
                           specs=[CapabilitySpec("fake", "Fake", "p", "m",
-                                                FakeWorkspaceCapability())])
+                                                FakeWorkspaceCapability(), worker_kind="NONE", sandbox="NONE")])
     server2 = make_server(app2, port=0)
     threading.Thread(target=server2.serve_forever, daemon=True).start()
     try:
@@ -340,3 +341,81 @@ def test_remote_credentials_are_not_exposed(tmp_path: Path) -> None:
         assert "[REDACTED]@" in rendered
     finally:
         server.shutdown()
+
+
+@pytest.mark.parametrize("worker_kind,sandbox,process_tree", [
+    ("CODEX_EXTERNAL", "UNSUPPORTED", False),
+    ("UNSUPPORTED", "UNSUPPORTED", False),
+    ("DSH_IN_PROCESS", "UNSUPPORTED", True),
+    ("DSH_IN_PROCESS", "DSH", False),
+])
+def test_unsupported_child_type_creates_no_task_or_runtime(tmp_path, worker_kind, sandbox, process_tree):
+    capability = FakeWorkspaceCapability()
+    spec = CapabilitySpec("unsupported", "unsupported", "p", "m", capability,
+                          worker_kind=worker_kind, sandbox=sandbox, process_tree=process_tree)
+    app = ControlConsole(data_dir=tmp_path / "data", guard=GitWorkspaceGuard(), specs=[spec])
+    with pytest.raises(ValueError, match="^UNSUPPORTED_CHILD_TYPE$"):
+        app.create_task(objective="do work", binding_payload={}, mode="read_only",
+                        capability_id="unsupported")
+    assert app._store.list_tasks() == []
+    assert app._gateway._entries == {}
+    assert app._running == set()
+    assert capability.calls == 0
+
+
+@pytest.mark.parametrize("capability_id,mode", [
+    ("dsh-readonly", "read_only"),
+    ("dsh-mutating", "mutating"),
+])
+def test_default_dsh_specs_rejected_without_task_or_runtime(tmp_path, monkeypatch, capability_id, mode):
+    from console.app import build_default_console
+
+    fixture = build(tmp_path)
+    app = build_default_console(data_dir=tmp_path / "data")
+    spec = app._specs[capability_id]
+    assert (spec.worker_kind, spec.sandbox, spec.process_tree) == ("DSH_IN_PROCESS", "DSH", False)
+    assert "DSH_PERMISSION_MODE" not in spec.capability._env_extra
+    assert spec.capability._permission_mode is None
+    assert spec.capability._require_process_tree is True
+    def must_not_execute(request):
+        pytest.fail("unsupported Console DSH spec reached execution")
+    monkeypatch.setattr(spec.capability, "execute", must_not_execute)
+    binding, verification = app.verify_workspace(str(fixture.worktree_current), mode=mode)
+    assert verification.execution_allowed
+    with pytest.raises(ValueError, match="^UNSUPPORTED_CHILD_TYPE$"):
+        app.create_task(objective="MARK_COMPLETED", binding_payload=binding.to_payload(),
+                        mode=mode, capability_id=capability_id)
+    assert app._store.list_tasks() == []
+    assert app._gateway._entries == {}
+    assert app._running == set()
+    assert spec.capability.active_executions() == []
+    demo = app._specs["demo-human"]
+    assert (demo.worker_kind, demo.sandbox, demo.process_tree) == ("NONE", "NONE", False)
+
+
+@pytest.mark.parametrize("termination", [None, False, "raise"])
+def test_cancel_returns_false_when_termination_unavailable_or_unconfirmed(tmp_path, termination):
+    from core.execution import ExecutionRequest
+    from tests.test_dsh_process_tree import wait_until
+
+    capability = FakeWorkspaceCapability(blocking=True)
+    if termination is None:
+        capability.terminate = None
+    elif termination is False:
+        capability.terminate = lambda execution_id: False
+    else:
+        def fail(execution_id):
+            raise RuntimeError("termination failed")
+        capability.terminate = fail
+    spec = CapabilitySpec("fake", "Fake", "p", "m", capability, worker_kind="NONE", sandbox="NONE")
+    app = ControlConsole(data_dir=tmp_path / "data", guard=GitWorkspaceGuard(), specs=[spec])
+    assert app.cancel_task("no-runtime") is False
+    request = ExecutionRequest(invocation_id="i", task_id="t", objective="wait")
+    thread = threading.Thread(target=lambda: app._gateway.run(spec, request))
+    thread.start()
+    try:
+        wait_until(lambda: capability.calls == 1)
+        assert app.cancel_task("t") is False
+    finally:
+        capability.stop.set()
+        thread.join(5)

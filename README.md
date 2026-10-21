@@ -32,9 +32,13 @@ Implemented:
   provider health, and continuation compatibility. It never executes anything.
 - `adapters/dsh_execution.py` — real DSH execution: drives `dsh --profile sdk`
   (bridge-owned execution id, process-per-execution, event completion,
-  timeout/terminate seam). Real provider smoke verified on
+  timeout/terminate seam). Historical real provider smoke was verified on
   `deepseek-official/deepseek-chat`; cross-process CONTINUE needs DSH 0.2.x
-  (`session/resume`).
+  (`session/resume`). **GOAL-01 status:** real filesystem isolation is
+  **UNVERIFIED** on this host (`sandbox-exec` cannot apply); the adapter
+  defaults to `PROCESS_TREE_UNSUPPORTED` before spawn, and the Console rejects
+  its default DSH specs as `UNSUPPORTED_CHILD_TYPE`. Group-only cleanup is an
+  explicit non-safety test mode and never claims full-tree verification.
 - `core/execution.py` + `core/controller.py` — bounded Task Controller:
   one `advance()` loads state, routes, invokes exactly one execution
   capability, persists the result, and returns a structured outcome.

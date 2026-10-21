@@ -39,11 +39,12 @@ def real_adapter(tmp_path: Path):
     from adapters.dsh_execution import DSHExecutionAdapter
 
     return DSHExecutionAdapter(
+        require_process_tree=False,  # Opt-in smoke exercises group cleanup only.
         provider=PROVIDER,
         model=MODEL,
         cwd=str(REPO_ROOT),
         timeout_seconds=TIMEOUT,
-        env_extra={"DSH_PERMISSION_MODE": "read-only"},
+        permission_mode="read-only",
     )
 
 
@@ -56,6 +57,7 @@ def smoke_request(invocation: str, token: str, mode=ExecutionMode.FRESH, **kwarg
             "End with the completion marker line."
         ),
         execution_mode=mode,
+        workspace_path=str(REPO_ROOT),
         **kwargs,
     )
 
@@ -102,6 +104,12 @@ def test_real_continue_cross_process(tmp_path: Path) -> None:
 
 
 def test_real_controller_execution_closure(tmp_path: Path) -> None:
+    from adapters.git_workspace import GitWorkspaceGuard
+    from core.workspace import WorkspacePolicy, bind_workspace
+    from tests.helpers.git_workspace_fixture import build
+    from tests.test_workspace_integration import binding
+
+    fixture = build(tmp_path)
     store = JSONTaskStateStore(tmp_path / "tasks")
     health = ProviderHealthTracker()
     health.record_success(PROVIDER)
@@ -110,6 +118,7 @@ def test_real_controller_execution_closure(tmp_path: Path) -> None:
         router=ThinRouter(),
         health=health,
         capabilities={"dsh-exec": real_adapter(tmp_path)},
+        workspace_guard=GitWorkspaceGuard(),
     )
     task = store.create_task(
         objective=(
@@ -117,6 +126,9 @@ def test_real_controller_execution_closure(tmp_path: Path) -> None:
             "tools. End with the completion marker line."
         )
     )
+    bind_workspace(store, task.task_id, binding(
+        fixture, policy=WorkspacePolicy(read_only=True, require_tracking_ref=True)),
+        expected_revision=task.revision)
     outcome = controller.advance(
         task.task_id,
         candidates=[CapabilityCandidate("dsh-exec", "execution", provider=PROVIDER)],

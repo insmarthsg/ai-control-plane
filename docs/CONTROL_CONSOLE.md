@@ -69,9 +69,22 @@ tracking ref, tracking head, clean/dirty, mismatches, and recommendation.
 Default is **只读分析** (read-only). The user must explicitly choose
 **允许修改项目**; the mode is stored in the binding policy and selects the
 read-only or mutating DSH capability. No permission is inferred from natural
-language.
+language. The Controller derives the request access mode from the persisted
+binding, and the DSH adapter sets its permission environment from that mode.
+Missing/unavailable/mismatched sandbox evidence blocks execution completion;
+there is no fallback to an unsandboxed or writable mode.
 
 ## 6. Task start
+
+Before creating a Task or runtime, the Console requires either `worker_kind=NONE`
+(the local Human Gate demo) or all of `DSH_IN_PROCESS`, `sandbox=DSH`, and
+`process_tree=True`. Other combinations, including `CODEX_EXTERNAL` and the
+`UNSUPPORTED` defaults, raise `UNSUPPORTED_CHILD_TYPE`. Both default DSH specs
+honestly declare `process_tree=False`, so automatic DSH execution is blocked
+with that error and creates no Task/runtime. The adapter also defaults to
+`require_process_tree=True` and fails before spawn with `PROCESS_TREE_UNSUPPORTED`.
+There is no silent group-only downgrade. A reliable full-tree owner is not
+implemented; only the `worker_kind=NONE` demo remains allowed by default.
 
 `POST /api/tasks` creates a real Task, sets it RUNNING, persists the binding,
 and starts **one** bounded `TaskController.advance` in a background thread. The
@@ -103,7 +116,11 @@ localStorage and re-reads everything from the backend.
 execution gateway `terminate(execution_id)` — the same adapter termination seam
 used by Runtime Control. It does not edit Task status or kill an unrelated PID.
 The UI re-reads Observation; a runtime stop is not shown as Task CANCELLED.
-There is no "pause" wording.
+Cancellation returns the adapter's actual termination result; no active runtime,
+no terminate method, or unconfirmed cleanup returns false. DSH termination
+checks the original owned process group; it refuses stale groups after leader
+exit. Group clearance does not prove full descendant cleanup; direct group-only
+adapter results always report `process_tree_verified=False`. There is no "pause" wording.
 
 ## 9. Human Gate
 
@@ -151,6 +168,12 @@ labels; raw JSON is not dumped.
    approve/reject/modify.
 
 ## 14. Known limitations
+
+- Real DSH filesystem sandbox isolation is **UNVERIFIED** here; the approved
+  host audit observed sandbox unavailability. Synthetic SDK tests establish
+  failure handling only.
+- Process ownership is in-memory and limited to the initial POSIX process group;
+  crash orphans and descendants that leave that group are not contained.
 
 - Browser automation is not installed; `BROWSER_E2E` is **UNVERIFIED** (manual
   validation required).

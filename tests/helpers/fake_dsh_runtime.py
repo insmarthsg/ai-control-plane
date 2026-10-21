@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -69,6 +70,23 @@ def assistant_event(session_id, text):
 
 
 def main():
+    tree_dir = os.environ.get("FAKE_TREE_DIR")
+    if tree_dir:
+        # Real OS processes, used only to test ownership/cleanup, not isolation.
+        root = Path(tree_dir)
+        root.mkdir(parents=True, exist_ok=True)
+        if os.environ.get("FAKE_IGNORE_TERM") == "1":
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        if os.fork() == 0:
+            role = "grandchild" if os.fork() == 0 else "child"
+            (root / f"{role}.json").write_text(json.dumps({
+                "pid": os.getpid(), "pgid": os.getpgrp(), "ppid": os.getppid()}))
+            # A test failure cannot leave these synthetic descendants indefinitely.
+            signal.alarm(30)
+            while True:
+                signal.pause()
+        (root / "leader.json").write_text(json.dumps({
+            "pid": os.getpid(), "pgid": os.getpgrp(), "ppid": os.getppid()}))
     counter = 0
     for line in sys.stdin:
         line = line.strip()
@@ -88,12 +106,62 @@ def main():
         elif method == "session/prompt":
             session_id = str(params.get("sessionId"))
             text = prompt_text(params)
+            if "LATE_SANDBOX_" in text:
+                def late_event(signum, frame):
+                    if "LATE_SANDBOX_UNAVAILABLE" in text:
+                        event = {"type": "tool/result", "data": {"result": {
+                            "isError": True, "error": {"code": "SANDBOX_UNAVAILABLE"}}}}
+                    else:
+                        event = {"type": "sandbox/mode", "data": {"mode": "workspace-write"}}
+                    notify("session.event", {"sessionId": session_id, "event": event})
+                    sys.exit(0)
+                signal.signal(signal.SIGTERM, late_event)
+            escape_path = os.environ.get("FAKE_ESCAPE_PATH")
+            if escape_path:
+                ready_read, ready_write = os.pipe()
+                if os.fork() == 0:
+                    os.close(ready_read)
+                    os.setsid()
+                    signal.alarm(30)
+                    # Keep stdout only in the explicit undrained-reader test.
+                    for fd in (0, 2) if os.environ.get("FAKE_ESCAPE_STDOUT") == "1" else (0, 1, 2):
+                        os.close(fd)
+                    Path(escape_path).write_text(json.dumps({
+                        "pid": os.getpid(), "pgid": os.getpgrp(), "ppid": os.getppid()}))
+                    os.write(ready_write, b"1")
+                    os.close(ready_write)
+                    while True:
+                        signal.pause()
+                os.close(ready_write)
+                assert os.read(ready_read, 1) == b"1"
+                os.close(ready_read)
             state = load(session_id) or {"turns": 0, "resumed": False}
             turns_before = state["turns"]
             state["turns"] = turns_before + 1
             save(session_id, state)
 
             notify("session.status", {"sessionId": session_id, "status": "running"})
+            notify("session.event", {"sessionId": session_id, "event": {
+                "type": "permission/preset", "data": {"preset": os.environ["DSH_PERMISSION_MODE"]}}})
+            if "MISSING_SANDBOX_MODE" not in text:
+                mode = ("wrong-mode" if "MISMATCH_SANDBOX_MODE" in text
+                        else os.environ["DSH_PERMISSION_MODE"])
+                notify("session.event", {"sessionId": session_id, "event": {
+                    "type": "sandbox/mode", "data": {"mode": mode}}})
+                if "REPEATED_SANDBOX_MODE" in text or "CONFLICTING_SANDBOX_MODE" in text:
+                    second = "workspace-write" if "CONFLICTING_SANDBOX_MODE" in text else mode
+                    notify("session.event", {"sessionId": session_id, "event": {
+                        "type": "sandbox/mode", "data": {"mode": second}}})
+            if "TOOL_SANDBOX_UNAVAILABLE" in text:
+                notify("session.event", {"sessionId": session_id, "event": {
+                    "type": "tool/result", "data": {"result": {
+                        "isError": True, "error": {"code": "SANDBOX_UNAVAILABLE"}}}}})
+            if "TURN_SANDBOX_UNAVAILABLE" in text:
+                notify("session.event", {"sessionId": session_id, "event": {
+                    "type": "turn/end", "data": {"reason": {"kind": "error",
+                    "error": {"code": "SANDBOX_UNAVAILABLE"}}}}})
+                reply(rid, {"messageId": f"msg_{counter}"})
+                continue
             if "SLOW_WAIT" in text:
                 # Never emits turn/end: the caller must time out or terminate.
                 reply(rid, {"messageId": f"msg_{counter}"})

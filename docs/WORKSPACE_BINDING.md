@@ -122,11 +122,28 @@ state blocks both read-only and mutating tasks in this version.
    runs no capability, creates no runtime, leaves Provider Health untouched;
 4. on success: re-verifies immediately before execution (TOCTOU), blocking on
    any change;
-5. passes `workspace_path = actual worktree` into `ExecutionRequest`.
+5. passes `workspace_path = actual worktree` and binding-derived `access_mode`
+   into `ExecutionRequest` (`read-only` or `workspace-write`), recording
+   `access_mode` and `workspace_id` in `EXECUTION_STARTED`.
 
 Callers cannot override this with their process cwd or with model text. The
 DSH adapter spawns its runtime with `request.workspace_path`, and reports the
-cwd in the fake-peer test.
+cwd in the fake-peer test. It requires an explicit mode and existing canonical
+workspace directory even for direct calls. The mode reaches `DSH_PERMISSION_MODE`
+after capability environment merging. `SANDBOX_UNAVAILABLE`, absent sandbox
+mode, any mismatched mode (including cleanup/cancel-time events), or incomplete
+stdout draining fails closed: Task becomes blocked through the
+existing Controller failure path, with no successful completion or provider
+health penalty. Mode-reporting tests do not prove real filesystem isolation.
+
+The Console rejects unsupported worker types before creating a Task/runtime.
+`CODEX_EXTERNAL` is unsupported even when its native sandbox works, because
+it does not provide the required full-tree ownership through this adapter.
+Default DSH specs also declare `process_tree=False` and are rejected as
+`UNSUPPORTED_CHILD_TYPE` before creating a Task/runtime. Direct DSH execution
+defaults to `PROCESS_TREE_UNSUPPORTED` before spawn; only an explicit
+`require_process_tree=False` caller opts into group-only cleanup, always with
+`process_tree_verified=False`. There is no silent downgrade.
 
 ## 9. Restart, Human, Handoff, provider switch
 

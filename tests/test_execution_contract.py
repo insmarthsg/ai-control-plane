@@ -78,3 +78,16 @@ def test_request_redacts_context_and_metadata() -> None:
     assert "abcdefghijklmnop" not in request.durable_context["note"]
     assert request.metadata["api_key"] == "[REDACTED]"
     assert request.continuation_ref == "opaque/ref#1"
+
+
+def test_access_mode_normalizes_strings_and_rejects_unknown_values():
+    import pytest
+    from core.execution import AccessMode, ExecutionRequest
+
+    for value, expected in [(" READ-ONLY ", AccessMode.READ_ONLY),
+                            ("workspace-write", AccessMode.WORKSPACE_WRITE)]:
+        request = ExecutionRequest(invocation_id="i", task_id="t", objective="x", access_mode=value)
+        assert request.access_mode is expected
+    for value in ["unknown", "", 42]:
+        with pytest.raises(ValueError):
+            ExecutionRequest(invocation_id="i", task_id="t", objective="x", access_mode=value)

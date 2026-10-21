@@ -63,6 +63,9 @@ class CapabilitySpec:
     model: str
     capability: Any
     modes: tuple[str, ...] = ("read_only", "mutating")
+    worker_kind: str = "UNSUPPORTED"
+    sandbox: str = "UNSUPPORTED"
+    process_tree: bool = False
 
 
 class HumanGateDemoCapability:
@@ -195,18 +198,18 @@ class _ExecutionGateway:
         if not active:
             return False
         execution_id, record, spec = active[0]
+        terminate = getattr(spec.capability, "terminate", None)
+        if not callable(terminate):
+            return False
         with self._lock:
             self._entries[execution_id] = (
                 replace(record, status=RuntimeStatus.STOPPING, updated_at=_now(), reason="cancelling"),
                 spec,
             )
-        terminate = getattr(spec.capability, "terminate", None)
-        if callable(terminate):
-            try:
-                terminate(execution_id)
-            except Exception:
-                pass
-        return True
+        try:
+            return bool(terminate(execution_id))
+        except Exception:
+            return False
 
 
 class ControlConsole:
@@ -314,6 +317,10 @@ class ControlConsole:
         spec = self._specs.get(capability_id)
         if spec is None:
             raise ValueError("unknown capability")
+        if spec.worker_kind != "NONE" and not (
+            spec.worker_kind == "DSH_IN_PROCESS" and spec.sandbox == "DSH" and spec.process_tree
+        ):
+            raise ValueError("UNSUPPORTED_CHILD_TYPE")
         if mode not in spec.modes:
             raise ValueError("capability does not support this mode")
 
@@ -500,9 +507,9 @@ def build_default_console(data_dir: str | Path | None = None) -> ControlConsole:
             DSHExecutionAdapter(
                 provider=provider, model=model,
                 cwd=str(Path.cwd()),
-                env_extra={"DSH_PERMISSION_MODE": "read-only"},
             ),
             modes=("read_only",),
+            worker_kind="DSH_IN_PROCESS", sandbox="DSH", process_tree=False,
         ),
         CapabilitySpec(
             "dsh-mutating",
@@ -512,9 +519,9 @@ def build_default_console(data_dir: str | Path | None = None) -> ControlConsole:
             DSHExecutionAdapter(
                 provider=provider, model=model,
                 cwd=str(Path.cwd()),
-                env_extra={"DSH_PERMISSION_MODE": "workspace-write"},
             ),
             modes=("mutating",),
+            worker_kind="DSH_IN_PROCESS", sandbox="DSH", process_tree=False,
         ),
         CapabilitySpec(
             "demo-human",
@@ -523,6 +530,7 @@ def build_default_console(data_dir: str | Path | None = None) -> ControlConsole:
             "demo",
             HumanGateDemoCapability(),
             modes=("read_only", "mutating"),
+            worker_kind="NONE", sandbox="NONE", process_tree=False,
         ),
     ]
     return ControlConsole(data_dir=data, guard=guard, specs=specs)

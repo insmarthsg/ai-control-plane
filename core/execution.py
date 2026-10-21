@@ -20,6 +20,7 @@ from .redaction import redact, redact_data
 from .task import Artifact
 
 __all__ = [
+    "AccessMode",
     "ExecutionCapability",
     "ExecutionFailure",
     "ExecutionFailureKind",
@@ -28,6 +29,11 @@ __all__ = [
     "ExecutionResult",
     "ExecutionStatus",
 ]
+
+
+class AccessMode(str, Enum):
+    READ_ONLY = "read-only"
+    WORKSPACE_WRITE = "workspace-write"
 
 
 class ExecutionMode(str, Enum):
@@ -65,8 +71,14 @@ class ExecutionRequest:
     constraints: Mapping[str, Any] = field(default_factory=dict)
     handoff_reason: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    access_mode: AccessMode | None = None
 
     def __post_init__(self) -> None:
+        if self.access_mode is not None:
+            value = self.access_mode
+            if isinstance(value, str):
+                value = value.strip().lower()
+            object.__setattr__(self, "access_mode", AccessMode(value))
         object.__setattr__(self, "objective", redact(self.objective))
         object.__setattr__(self, "continuation_ref", redact(self.continuation_ref) if self.continuation_ref else None)
         object.__setattr__(self, "checkpoint", redact(self.checkpoint) if self.checkpoint else None)

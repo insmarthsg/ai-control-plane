@@ -26,6 +26,7 @@ from typing import Any, Mapping, Protocol, Sequence
 from .capability import CapabilityCandidate
 from .errors import ProviderError
 from .execution import (
+    AccessMode,
     ExecutionCapability,
     ExecutionFailure,
     ExecutionFailureKind,
@@ -281,7 +282,10 @@ class TaskController:
 
         binding = binding_for(task)
         workspace_path = None
+        access_mode = None
         if binding is not None:
+            access_mode = (AccessMode.READ_ONLY if binding.policy.read_only
+                           else AccessMode.WORKSPACE_WRITE)
             task, blocked, workspace_path = self._gate_workspace(
                 task, binding, decision, invocation_id
             )
@@ -289,7 +293,7 @@ class TaskController:
                 return blocked
 
         request = self._build_request(
-            task, selected, decision, constraints, invocation_id, workspace_path
+            task, selected, decision, constraints, invocation_id, workspace_path, access_mode
         )
 
         try:
@@ -301,6 +305,8 @@ class TaskController:
                     "invocation_id": invocation_id,
                     "capability_id": selected.capability_id,
                     "mode": decision.mode.value,
+                    "access_mode": access_mode.value if access_mode else None,
+                    "workspace_id": binding.workspace_id if binding else None,
                 },
                 actor=self._actor,
             )
@@ -388,6 +394,7 @@ class TaskController:
         constraints: UserConstraints,
         invocation_id: str,
         workspace_path: str | None = None,
+        access_mode: AccessMode | None = None,
     ) -> ExecutionRequest:
         if decision.mode is ContinuationMode.CONTINUE:
             mode = ExecutionMode.CONTINUE
@@ -415,6 +422,7 @@ class TaskController:
             continuation_ref=continuation_ref,
             checkpoint=checkpoint,
             workspace_path=workspace_path,
+            access_mode=access_mode,
             constraints={
                 "required": sorted(constraints.required),
                 "denied": sorted(constraints.denied),
